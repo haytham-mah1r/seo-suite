@@ -41,9 +41,12 @@
 body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);font-size:14px;-webkit-font-smoothing:antialiased;}
 ::-webkit-scrollbar{width:10px;height:10px;}
 ::-webkit-scrollbar-thumb{background:#D7DCE1;border-radius:6px;}
-a{color:var(--orange-dim);text-decoration:none;}
-button{font-family:var(--sans);cursor:pointer;}
-input,select,textarea{font-family:var(--sans);}
+a{color:var(--orange-dim);text-decoration:none;transition:color .15s ease;}
+a:hover{color:var(--orange);text-decoration:underline;}
+button{font-family:var(--sans);cursor:pointer;transition:all .15s cubic-bezier(.4,0,.2,1);}
+input,select,textarea{font-family:var(--sans);transition:border-color .15s ease, box-shadow .15s ease;}
+input:focus,select:focus,textarea:focus{outline:none;border-color:var(--orange);box-shadow:0 0 0 3px var(--orange-wash);}
+button:focus-visible,a:focus-visible,.project-item:focus-visible{outline:2px solid var(--orange);outline-offset:2px;}
 h1,h2,h3{font-family:var(--display);margin:0;}
 
 #app{display:flex;height:100vh;overflow:hidden;}
@@ -64,15 +67,18 @@ h1,h2,h3{font-family:var(--display);margin:0;}
 
 #project-search{margin:14px 14px 8px;padding:9px 11px;background:var(--panel-2);border:1px solid var(--line);border-radius:9px;color:var(--ink);width:calc(100% - 28px);font-size:13px;}
 #project-add-btn{margin:0 14px 10px;padding:9px 10px;background:var(--orange);border:none;border-radius:9px;color:#fff;font-weight:700;font-size:12.5px;display:flex;align-items:center;justify-content:center;gap:6px;}
-#project-add-btn:hover{background:var(--orange-dim);}
+#project-add-btn:hover{background:var(--orange-dim);transform:translateY(-1px);box-shadow:0 4px 12px rgba(234,122,46,.28);}
+#project-add-btn:active{transform:translateY(0);box-shadow:none;}
 #project-list{flex:1;overflow-y:auto;padding:0 10px 14px;}
-.project-item{padding:9px 10px;border-radius:9px;cursor:pointer;margin-bottom:2px;display:flex;justify-content:space-between;align-items:center;gap:8px;}
-.project-item:hover{background:var(--panel-2);}
+.project-item{padding:9px 10px;border-radius:9px;cursor:pointer;margin-bottom:2px;display:flex;justify-content:space-between;align-items:center;gap:8px;transition:background .15s ease, transform .15s ease;}
+.project-item:hover{background:var(--panel-2);transform:translateX(2px);}
+.project-item:active{transform:translateX(2px) scale(.99);}
+.project-item .pdel{opacity:0;color:var(--text-dim);font-size:14px;flex:none;transition:opacity .15s ease, color .15s ease;}
+.project-item .pdel:hover{color:var(--red);}
+.project-item:hover .pdel{opacity:1;}
 .project-item.active{background:var(--orange-wash);border:1px solid #F1C79B;}
 .project-item .pname{font-weight:600;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
 .project-item .pdomain{font-size:11px;color:var(--text-dim);}
-.project-item .pdel{opacity:0;color:var(--text-dim);font-size:14px;flex:none;}
-.project-item:hover .pdel{opacity:1;}
 
 #sidebar-footer{padding:12px 16px;border-top:1px solid var(--line);font-size:11px;color:var(--text-dim);}
 #sidebar-footer .status-dot{display:inline-block;width:7px;height:7px;border-radius:50%;margin-right:6px;background:var(--red);}
@@ -84,16 +90,19 @@ h1,h2,h3{font-family:var(--display);margin:0;}
 #topbar h1{font-size:19px;color:var(--charcoal);}
 #topbar .sub{font-size:12px;color:var(--text-dim);margin-top:2px;}
 #topbar-right{display:flex;align-items:center;gap:10px;}
-.date-picker{display:flex;align-items:center;gap:6px;background:var(--panel-2);border:1px solid var(--line);border-radius:9px;padding:6px 10px;}
+.date-picker{display:flex;align-items:center;gap:6px;background:var(--panel-2);border:1px solid var(--line);border-radius:9px;padding:6px 10px;transition:border-color .15s ease;}
+.date-picker:focus-within{border-color:var(--orange);}
 .date-picker input{border:none;background:transparent;font-size:12.5px;color:var(--ink);outline:none;}
 .btn{border:1px solid var(--line);background:var(--panel);border-radius:9px;padding:8px 13px;font-size:12.5px;font-weight:600;color:var(--ink);}
-.btn:hover{border-color:#C9CFD5;background:var(--panel-2);}
+.btn:hover{border-color:#C9CFD5;background:var(--panel-2);transform:translateY(-1px);box-shadow:0 3px 10px rgba(22,32,43,.08);}
+.btn:active{transform:translateY(0);box-shadow:none;}
 .btn-primary{background:var(--orange);border-color:var(--orange);color:#fff;}
-.btn-primary:hover{background:var(--orange-dim);border-color:var(--orange-dim);}
+.btn-primary:hover{background:var(--orange-dim);border-color:var(--orange-dim);box-shadow:0 4px 12px rgba(234,122,46,.3);}
 .btn-ghost{border:none;background:transparent;color:var(--text-dim);}
+.btn-ghost:hover{color:var(--orange-dim);background:var(--orange-wash);}
 
 #tabs{display:flex;gap:2px;padding:0 22px;background:var(--panel);border-bottom:1px solid var(--line);overflow-x:auto;flex:none;}
-.tab-btn{padding:12px 14px;border:none;background:none;font-size:13px;font-weight:600;color:var(--text-dim);border-bottom:2px solid transparent;white-space:nowrap;}
+.tab-btn{padding:12px 14px;border:none;background:none;font-size:13px;font-weight:600;color:var(--text-dim);border-bottom:2px solid transparent;white-space:nowrap;transition:color .15s ease, border-color .2s ease;}
 .tab-btn:hover{color:var(--ink);}
 .tab-btn.active{color:var(--orange-dim);border-bottom-color:var(--orange);}
 
@@ -109,7 +118,8 @@ h1,h2,h3{font-family:var(--display);margin:0;}
 .grid-2{grid-template-columns:repeat(2,1fr);}
 @media(max-width:1100px){.grid-4{grid-template-columns:repeat(2,1fr);}.grid-3{grid-template-columns:repeat(2,1fr);}}
 
-.card{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:16px 18px;box-shadow:var(--shadow);}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:16px 18px;box-shadow:var(--shadow);transition:box-shadow .2s ease, transform .2s ease;}
+.card:hover{box-shadow:0 2px 4px rgba(22,32,43,.06), 0 10px 28px rgba(22,32,43,.08);transform:translateY(-1px);}
 .card h3{font-size:13px;color:var(--text-dim);font-weight:600;text-transform:uppercase;letter-spacing:.4px;margin-bottom:10px;}
 .stat-value{font-family:var(--mono);font-size:26px;font-weight:700;color:var(--ink);}
 .stat-delta{font-size:12px;font-weight:600;margin-top:4px;}
@@ -124,6 +134,7 @@ h1,h2,h3{font-family:var(--display);margin:0;}
 table{width:100%;border-collapse:collapse;font-size:12.5px;}
 thead th{text-align:left;color:var(--text-dim);font-weight:600;text-transform:uppercase;font-size:10.5px;letter-spacing:.4px;padding:8px 10px;border-bottom:1px solid var(--line);}
 tbody td{padding:10px;border-bottom:1px solid var(--line);vertical-align:middle;}
+tbody tr{transition:background .15s ease;}
 tbody tr:hover{background:var(--panel-2);}
 tbody tr:last-child td{border-bottom:none;}
 .mono{font-family:var(--mono);}
@@ -152,9 +163,10 @@ tbody tr:last-child td{border-bottom:none;}
 .notice{background:var(--orange-wash);border:1px solid #F1C79B;border-radius:9px;padding:12px 14px;font-size:12.5px;color:var(--charcoal);margin-bottom:16px;}
 .notice code{background:#fff;padding:1px 5px;border-radius:4px;border:1px solid #F1C79B;}
 .subtabs{display:flex;gap:6px;margin-bottom:16px;}
-.subtab-btn{padding:6px 12px;border:1px solid var(--line);background:var(--panel);border-radius:100px;font-size:12px;font-weight:600;color:var(--text-dim);}
+.subtab-btn{padding:6px 12px;border:1px solid var(--line);background:var(--panel);border-radius:100px;font-size:12px;font-weight:600;color:var(--text-dim);transition:all .15s ease;}
+.subtab-btn:hover{border-color:var(--charcoal);color:var(--charcoal);}
 .subtab-btn.active{background:var(--charcoal);border-color:var(--charcoal);color:#fff;}
-.score-ring{width:64px;height:64px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-family:var(--mono);font-weight:700;font-size:16px;flex:none;}
+.subtab-btn.active:hover{background:#1f2830;border-color:#1f2830;color:#fff;}
 .llm-logo{width:22px;height:22px;border-radius:6px;display:inline-flex;align-items:center;justify-content:center;font-size:10px;font-weight:800;color:#fff;margin-right:6px;}
 
 /* ---------- Login screen ---------- */
@@ -171,6 +183,24 @@ tbody tr:last-child td{border-bottom:none;}
 #login-note{font-size:11px;color:var(--text-dim);margin-top:16px;line-height:1.5;}
 #login-note code{background:var(--panel-2);padding:1px 5px;border-radius:4px;}
 #app.hidden{display:none;}
+
+/* ---------- Visual components: rings, donuts, area charts ---------- */
+.ring-wrap{position:relative;display:flex;align-items:center;justify-content:center;flex:none;transition:transform .2s cubic-bezier(.34,1.56,.64,1);}
+.ring-wrap:hover{transform:scale(1.05);}
+.ring-hole{position:absolute;border-radius:50%;background:var(--panel);display:flex;flex-direction:column;align-items:center;justify-content:center;}
+.ring-value{font-family:var(--mono);font-weight:700;color:var(--ink);line-height:1;}
+.ring-caption{font-size:9.5px;color:var(--text-dim);text-transform:uppercase;letter-spacing:.3px;margin-top:3px;text-align:center;}
+.stat-card-visual{display:flex;align-items:center;gap:14px;}
+.stat-card-visual .stat-text{min-width:0;}
+.stat-card-visual .stat-label{font-size:11px;color:var(--text-dim);font-weight:600;text-transform:uppercase;letter-spacing:.4px;margin-bottom:6px;}
+.legend{display:flex;flex-direction:column;gap:7px;margin-top:2px;}
+.legend-row{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--charcoal);padding:2px 4px;border-radius:5px;transition:background .15s ease;}
+.legend-row:hover{background:var(--panel-2);}
+.legend-dot{width:9px;height:9px;border-radius:3px;flex:none;}
+.legend-row .legend-val{margin-left:auto;font-family:var(--mono);color:var(--text-dim);font-weight:600;}
+.area-chart-card{position:relative;}
+.smooth-bar-track{height:8px;background:var(--line);border-radius:100px;overflow:hidden;width:100%;}
+.smooth-bar-fill{height:100%;border-radius:100px;background:linear-gradient(90deg,var(--orange-dim),var(--orange));transition:width .4s cubic-bezier(.4,0,.2,1);}
 </style>
 </head>
 <body>
@@ -352,8 +382,9 @@ let STATE = loadLocal() || {
 
 function ensureProjectData(pid){
   if (!STATE.data[pid]) {
-    STATE.data[pid] = { keywords:[], suggestions:[], backlinks:[], competitors:[], contentAudits:[], llmPrompts:[], snapshots:{} };
+    STATE.data[pid] = { keywords:[], suggestions:[], backlinks:[], competitors:[], contentAudits:[], llmPrompts:[], snapshots:{}, lastLiveSerp:null };
   }
+  if (STATE.data[pid].lastLiveSerp === undefined) STATE.data[pid].lastLiveSerp = null;
   return STATE.data[pid];
 }
 function activeData(){ return STATE.activeProjectId ? ensureProjectData(STATE.activeProjectId) : null; }
@@ -438,6 +469,7 @@ function currentProject(){ return STATE.projects.find(p => p.id === STATE.active
 const TABS = [
   { id:"overview", label:"Overview" },
   { id:"keywords", label:"Keyword Tracking" },
+  { id:"serp", label:"Live SERP" },
   { id:"suggestions", label:"Keyword Suggestions" },
   { id:"backlinks", label:"Backlinks" },
   { id:"competitors", label:"Competitors" },
@@ -461,6 +493,107 @@ function renderTopbar(){
 }
 
 function esc(s){ return String(s ?? "").replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+
+// ---------------------------------------------------------------------
+// VISUAL COMPONENTS — progress rings, donut charts, smooth area charts
+// (all built with CSS conic-gradient / inline SVG, no chart library needed)
+// ---------------------------------------------------------------------
+
+// A single circular progress ring, e.g. "63% in top 10".
+function progressRing({ pct, color = "var(--orange)", size = 84, thickness = 10, value, caption }){
+  const clamped = Math.max(0, Math.min(100, pct));
+  const holeSize = size - thickness * 2;
+  return `
+    <div class="ring-wrap" style="width:${size}px;height:${size}px;border-radius:50%;background:conic-gradient(${color} ${clamped}%, var(--line) 0);">
+      <div class="ring-hole" style="width:${holeSize}px;height:${holeSize}px;">
+        <div class="ring-value" style="font-size:${Math.round(holeSize*0.26)}px;">${esc(value)}</div>
+        ${caption ? `<div class="ring-caption">${esc(caption)}</div>` : ""}
+      </div>
+    </div>
+  `;
+}
+
+// A multi-segment donut chart with a legend, e.g. backlink mix or keyword buckets.
+// segments: [{ label, value, color }]
+function donutChart(segments, size = 96, thickness = 16){
+  const total = segments.reduce((s, seg) => s + (seg.value || 0), 0);
+  let cumulative = 0;
+  const stops = [];
+  if (total <= 0) {
+    stops.push(`var(--line) 0% 100%`);
+  } else {
+    for (const seg of segments) {
+      const start = (cumulative / total) * 100;
+      cumulative += seg.value || 0;
+      const end = (cumulative / total) * 100;
+      stops.push(`${seg.color} ${start}% ${end}%`);
+    }
+  }
+  const holeSize = size - thickness * 2;
+  const legend = segments.map(seg => `
+    <div class="legend-row"><span class="legend-dot" style="background:${seg.color};"></span>${esc(seg.label)}<span class="legend-val">${seg.value}</span></div>
+  `).join("");
+  return `
+    <div style="display:flex;align-items:center;gap:16px;">
+      <div class="ring-wrap" style="width:${size}px;height:${size}px;border-radius:50%;background:conic-gradient(${stops.join(",")});">
+        <div class="ring-hole" style="width:${holeSize}px;height:${holeSize}px;">
+          <div class="ring-value" style="font-size:${Math.round(holeSize*0.3)}px;">${total}</div>
+          <div class="ring-caption">total</div>
+        </div>
+      </div>
+      <div class="legend">${legend}</div>
+    </div>
+  `;
+}
+
+// A smooth, filled area/line chart over a series of {date, value} points —
+// used for trend lines like average position over time. Lower-is-better
+// series (like rank position) can pass invert:true to flip the y-axis feel.
+function areaChart(points, { color = "var(--orange)", width = 640, height = 160, invert = false } = {}){
+  if (!points || points.length < 2) {
+    return `<div style="height:${height}px;display:flex;align-items:center;justify-content:center;color:var(--text-dim);font-size:12.5px;">Not enough history yet — save a few daily snapshots to see a trend line here.</div>`;
+  }
+  const vals = points.map(p => p.value);
+  let max = Math.max(...vals), min = Math.min(...vals);
+  if (max === min) { max += 1; min -= 1; }
+  const pad = 14;
+  const w = width, h = height;
+  const stepX = (w - pad * 2) / (points.length - 1);
+  const normY = (v) => {
+    const t = (v - min) / (max - min);
+    const yt = invert ? t : 1 - t;
+    return pad + yt * (h - pad * 2);
+  };
+  const coords = points.map((p, i) => [pad + i * stepX, normY(p.value)]);
+
+  // Smooth the line using simple quadratic midpoint curves.
+  let path = `M ${coords[0][0]},${coords[0][1]}`;
+  for (let i = 1; i < coords.length; i++) {
+    const [x0, y0] = coords[i - 1];
+    const [x1, y1] = coords[i];
+    const mx = (x0 + x1) / 2;
+    path += ` Q ${x0},${y0} ${mx},${(y0 + y1) / 2}`;
+  }
+  path += ` T ${coords[coords.length - 1][0]},${coords[coords.length - 1][1]}`;
+
+  const areaPath = `${path} L ${coords[coords.length - 1][0]},${h - pad} L ${coords[0][0]},${h - pad} Z`;
+  const gradId = "areaGrad" + Math.round(Math.random() * 1e6);
+
+  return `
+    <svg width="100%" height="${h}" viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" style="display:block;">
+      <defs>
+        <linearGradient id="${gradId}" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stop-color="${color}" stop-opacity="0.28"/>
+          <stop offset="100%" stop-color="${color}" stop-opacity="0"/>
+        </linearGradient>
+      </defs>
+      <path d="${areaPath}" fill="url(#${gradId})" stroke="none"/>
+      <path d="${path}" fill="none" stroke="${color}" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+      ${coords.map(([x,y]) => `<circle cx="${x}" cy="${y}" r="3.5" fill="${color}"/>`).join("")}
+    </svg>
+  `;
+}
+
 function fmtDate(d){ return new Date(d).toISOString().slice(0,10); }
 
 document.getElementById("view-date").value = fmtDate(new Date());
@@ -476,7 +609,7 @@ function renderContent(){
     return;
   }
   const renderers = {
-    overview: renderOverview, keywords: renderKeywords, suggestions: renderSuggestions,
+    overview: renderOverview, keywords: renderKeywords, serp: renderLiveSerp, suggestions: renderSuggestions,
     backlinks: renderBacklinks, competitors: renderCompetitors, content: renderContentGrader,
     llm: renderLLM, history: renderHistory, settings: renderSettings
   };
@@ -491,21 +624,46 @@ function renderAll(){ renderTopbar(); renderTabs(); renderProjectList(); renderC
 function renderOverview(){
   const d = activeData();
   const kws = d.keywords;
-  const avgPos = kws.length ? (kws.reduce((s,k)=>s+(k.position||100),0)/kws.length).toFixed(1) : "—";
+  const rankedKws = kws.filter(k => k.position);
+  const avgPos = rankedKws.length ? (rankedKws.reduce((s,k)=>s+k.position,0)/rankedKws.length) : null;
   const top10 = kws.filter(k => k.position && k.position<=10).length;
+  const top10Pct = kws.length ? Math.round((top10/kws.length)*100) : 0;
+  const avgPosPct = avgPos ? Math.max(4, Math.min(100, Math.round(100 - avgPos))) : 0;
+
   const liveBacklinks = d.backlinks.filter(b => b.status==="live").length;
   const opportunities = d.backlinks.filter(b => b.status==="opportunity").length;
 
+  const mentioned = d.llmPrompts.filter(p=>p.mentioned).length;
+  const llmPct = d.llmPrompts.length ? Math.round((mentioned/d.llmPrompts.length)*100) : 0;
+
+  const trendPoints = Object.keys(d.snapshots).sort().map(dt => ({ date: dt, value: d.snapshots[dt].avgPos }));
+
   return `
     <div class="grid grid-4">
-      <div class="card flag-corner"><h3>Keywords tracked</h3><div class="stat-value">${kws.length}</div>
-        <div class="stat-delta flat">${top10} in top 10</div></div>
-      <div class="card flag-corner"><h3>Average position</h3><div class="stat-value">${avgPos}</div>
-        <div class="stat-delta flat">across all tracked terms</div></div>
-      <div class="card flag-corner"><h3>Live backlinks</h3><div class="stat-value">${liveBacklinks}</div>
-        <div class="stat-delta up">${opportunities} open opportunities</div></div>
-      <div class="card flag-corner"><h3>LLM prompts monitored</h3><div class="stat-value">${d.llmPrompts.length}</div>
-        <div class="stat-delta flat">${d.llmPrompts.filter(p=>p.mentioned).length} mentioning the brand</div></div>
+      <div class="card flag-corner stat-card-visual">
+        ${progressRing({ pct: top10Pct, color: "var(--orange)", value: kws.length, caption: "keywords" })}
+        <div class="stat-text"><div class="stat-label">Keywords tracked</div><div class="stat-delta flat">${top10} in top 10 (${top10Pct}%)</div></div>
+      </div>
+      <div class="card flag-corner stat-card-visual">
+        ${progressRing({ pct: avgPosPct, color: "var(--green)", value: avgPos ? avgPos.toFixed(1) : "—", caption: "avg. rank" })}
+        <div class="stat-text"><div class="stat-label">Average position</div><div class="stat-delta flat">across all ranked terms</div></div>
+      </div>
+      <div class="card flag-corner">
+        <div class="stat-label" style="margin-bottom:10px;">Backlinks</div>
+        ${donutChart([
+          { label: "Live", value: liveBacklinks, color: "var(--green)" },
+          { label: "Opportunities", value: opportunities, color: "var(--orange)" },
+        ], 84, 14)}
+      </div>
+      <div class="card flag-corner stat-card-visual">
+        ${progressRing({ pct: llmPct, color: "var(--blue)", value: mentioned, caption: `of ${d.llmPrompts.length}` })}
+        <div class="stat-text"><div class="stat-label">LLM prompts monitored</div><div class="stat-delta flat">${llmPct}% mention the brand</div></div>
+      </div>
+    </div>
+
+    <div class="section-title"><h2>Average position over time</h2></div>
+    <div class="card area-chart-card">
+      ${areaChart(trendPoints, { color: "var(--orange)", height: 160, invert: true })}
     </div>
 
     <div class="section-title"><h2>Top movers this week</h2></div>
@@ -627,6 +785,69 @@ async function checkAllRankings(){
 }
 
 // =====================================================================
+// LIVE SERP — see the actual ranked results for any query + exact location
+// =====================================================================
+function renderLiveSerp(){
+  const d = activeData();
+  const r = d.lastLiveSerp;
+  return `
+    <div class="notice">Pull the real, current Google results page for any query and location — useful for eyeballing who actually shows up (organic results, featured snippets, local packs) before you commit to tracking a keyword long-term. This calls DataForSEO's live SERP endpoint through your proxy every time you run it, so use it deliberately rather than on every keystroke.</div>
+
+    <div class="form-row">
+      <div class="field-wrap" style="flex:1;min-width:220px;"><span class="field-label">Query</span><input id="serp-query" style="width:100%;" placeholder="e.g. emergency plumber austin"></div>
+      <div class="field-wrap"><span class="field-label">Country</span><input id="serp-location" placeholder="United States"></div>
+      <div class="field-wrap"><span class="field-label">City / region (optional)</span><input id="serp-city" placeholder="Austin, Texas"></div>
+      <div class="field-wrap"><span class="field-label">Device</span>
+        <select id="serp-device"><option>Desktop</option><option>Mobile</option></select>
+      </div>
+      <div class="field-wrap"><span class="field-label">&nbsp;</span><button class="btn btn-primary" onclick="runLiveSerp()" id="serp-run-btn">Run live search</button></div>
+    </div>
+
+    ${r ? `
+      <div class="section-title">
+        <h2>Results for "${esc(r.keyword)}" · ${esc(r.location_name)}</h2>
+        <span style="color:var(--text-dim);font-size:12px;">Checked ${esc(new Date(r.checkedAt).toLocaleString())}${r.resultCount ? ` · ~${r.resultCount.toLocaleString()} total results` : ''}</span>
+      </div>
+      ${r.items.length ? r.items.map(it => `
+        <div class="card" style="margin-bottom:10px;display:flex;gap:14px;align-items:flex-start;">
+          <div class="mono" style="flex:none;width:34px;height:34px;border-radius:9px;background:var(--orange-wash);color:var(--orange-dim);display:flex;align-items:center;justify-content:center;font-weight:700;">${it.rank ?? '–'}</div>
+          <div style="min-width:0;flex:1;">
+            <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+              <b style="color:var(--charcoal);">${esc(it.title)}</b>
+              ${it.type && it.type !== 'organic' ? `<span class="pill opportunity">${esc(it.type.replace('_',' '))}</span>` : ''}
+            </div>
+            <div style="font-size:12px;color:var(--green);margin:2px 0;">${esc(it.domain || '')}</div>
+            ${it.description ? `<div style="font-size:12.5px;color:var(--text-dim);">${esc(it.description)}</div>` : ''}
+            ${it.url ? `<a href="${esc(it.url)}" target="_blank" style="font-size:11.5px;">${esc(it.url)}</a>` : ''}
+          </div>
+        </div>
+      `).join("") : `<div class="card" style="color:var(--text-dim);">No organic results came back for this query/location.</div>`}
+    ` : `<div class="card" style="color:var(--text-dim);">Run a query above to see the live results page.</div>`}
+  `;
+}
+
+async function runLiveSerp(){
+  if (!STATE.proxyEndpoint) { alert("Set your serverless proxy endpoint in API & Settings first — that's what actually calls DataForSEO on your behalf."); switchTab("settings"); return; }
+  const keyword = document.getElementById("serp-query").value.trim();
+  if (!keyword) return;
+  const btn = document.getElementById("serp-run-btn");
+  btn.disabled = true; btn.textContent = "Running…";
+  try {
+    const res = await callProxy("live_serp", {
+      keyword,
+      location: document.getElementById("serp-location").value.trim() || "United States",
+      city: document.getElementById("serp-city").value.trim(),
+      device: document.getElementById("serp-device").value,
+    });
+    activeData().lastLiveSerp = { keyword, ...res };
+    persist();
+  } catch(e) {
+    alert("Live SERP check failed — check your proxy endpoint and DataForSEO credentials.");
+  }
+  renderContent();
+}
+
+// =====================================================================
 // KEYWORD SUGGESTIONS (trend-based)
 // =====================================================================
 function renderSuggestions(){
@@ -680,7 +901,28 @@ function renderBacklinks(){
   const sub = ACTIVE_SUBTAB.backlinks;
   const current = d.backlinks.filter(b=>b.status==="live");
   const opps = d.backlinks.filter(b=>b.status==="opportunity");
+  const freeOpps = opps.filter(o=>o.type==='free').length;
+  const paidOpps = opps.filter(o=>o.type==='paid').length;
   return `
+    <div class="grid grid-3" style="margin-bottom:20px;">
+      <div class="card">
+        <div class="stat-label" style="margin-bottom:10px;">Backlink mix</div>
+        ${donutChart([
+          { label: "Live", value: current.length, color: "var(--green)" },
+          { label: "Free opportunities", value: freeOpps, color: "var(--blue)" },
+          { label: "Paid opportunities", value: paidOpps, color: "var(--orange)" },
+        ], 88, 15)}
+      </div>
+      <div class="card stat-card-visual">
+        ${progressRing({ pct: current.length ? 100 : 0, color: "var(--green)", value: current.length, caption: "live" })}
+        <div class="stat-text"><div class="stat-label">Acquired backlinks</div><div class="stat-delta flat">logged so far for this client</div></div>
+      </div>
+      <div class="card stat-card-visual">
+        ${progressRing({ pct: opps.length ? Math.round((freeOpps/opps.length)*100) : 0, color: "var(--blue)", value: opps.length, caption: "open" })}
+        <div class="stat-text"><div class="stat-label">Open opportunities</div><div class="stat-delta flat">${freeOpps} free · ${paidOpps} paid</div></div>
+      </div>
+    </div>
+
     <div class="subtabs">
       <button class="subtab-btn ${sub==='current'?'active':''}" onclick="setBacklinkSub('current')">Current backlinks (${current.length})</button>
       <button class="subtab-btn ${sub==='opps'?'active':''}" onclick="setBacklinkSub('opps')">Opportunities (${opps.length})</button>
@@ -893,7 +1135,7 @@ function runContentGrade(){
   const ringColor = result.score>=75 ? "var(--green)" : result.score>=50 ? "var(--amber)" : "var(--red)";
   document.getElementById("cg-results").innerHTML = `
     <div class="card" style="margin-top:14px;display:flex;gap:18px;align-items:flex-start;">
-      <div class="score-ring" style="background:${ringColor}22;color:${ringColor};border:2px solid ${ringColor};">${result.score}</div>
+      ${progressRing({ pct: result.score, color: ringColor, size: 80, thickness: 9, value: result.score, caption: "/ 100" })}
       <div style="flex:1;">
         <div style="display:flex;gap:16px;margin-bottom:10px;flex-wrap:wrap;">
           <span class="tag mono">${result.wordCount} words</span>
@@ -929,8 +1171,27 @@ async function runDeepGrade(){
 const LLM_COLORS = { Claude:"#D97757", ChatGPT:"#10A37F", Perplexity:"#20808D" };
 function renderLLM(){
   const d = activeData();
+  const models = ["Claude","ChatGPT","Perplexity"];
   return `
     <div class="notice">Store the exact prompts you (or your client) care about — "best plumber in austin", "who does X better, brand A or brand B" — then log how each model answers over time. Automated checks call Claude / ChatGPT / Perplexity through your proxy (their APIs need server-side keys too); manual logging works right now with no setup.</div>
+
+    <div class="grid grid-3" style="margin-bottom:20px;">
+      ${models.map(m => {
+        const rows = d.llmPrompts.filter(p => p.model === m);
+        const mentioned = rows.filter(p => p.mentioned).length;
+        const pct = rows.length ? Math.round((mentioned/rows.length)*100) : 0;
+        return `
+          <div class="card stat-card-visual">
+            ${progressRing({ pct, color: LLM_COLORS[m], value: `${pct}%`, caption: "mention rate" })}
+            <div class="stat-text">
+              <div class="stat-label"><span class="llm-logo" style="background:${LLM_COLORS[m]};">${m[0]}</span>${m}</div>
+              <div class="stat-delta flat">${mentioned} of ${rows.length} prompts mention the brand</div>
+            </div>
+          </div>
+        `;
+      }).join("")}
+    </div>
+
     <div class="form-row">
       <div class="field-wrap" style="flex:1;min-width:280px;"><span class="field-label">Prompt to monitor</span><input id="llm-prompt" style="width:100%;" placeholder="e.g. best emergency plumber in Austin"></div>
       <div class="field-wrap"><span class="field-label">Model</span>
