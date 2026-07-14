@@ -1,0 +1,1067 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Edge — SEO Command Center</title>
+
+<!-- Firebase (compat build — simplest for a single static file) -->
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+
+<style>
+:root{
+  --ink:#13171A;
+  --panel:#1B2024;
+  --panel-2:#22282D;
+  --line:#323A40;
+  --text:#EEF1F3;
+  --text-dim:#8D98A0;
+  --teal:#EA7A2E;        /* Edge orange — kept var name "--teal" internally to avoid touching every rule */
+  --teal-dim:#B85A1B;    /* darker orange for gradients / hover states */
+  --charcoal:#2E3A44;    /* Edge wordmark charcoal, used for on-orange text */
+  --amber:#E8A33D;
+  --coral:#FF6B6B;
+  --green:#4ADE80;
+  --radius:10px;
+  --mono:'JetBrains Mono', monospace;
+  --sans:'Poppins', 'Inter', -apple-system, sans-serif;
+}
+*{box-sizing:border-box;}
+body{margin:0;background:var(--ink);color:var(--text);font-family:var(--sans);font-size:14px;}
+::-webkit-scrollbar{width:10px;height:10px;}
+::-webkit-scrollbar-thumb{background:var(--line);border-radius:6px;}
+a{color:var(--teal);text-decoration:none;}
+button{font-family:var(--sans);cursor:pointer;}
+input,select,textarea{font-family:var(--sans);}
+
+#app{display:flex;height:100vh;overflow:hidden;}
+
+/* Sidebar */
+#sidebar{width:260px;flex:none;background:var(--panel);border-right:1px solid var(--line);display:flex;flex-direction:column;}
+.brand{padding:18px 16px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:10px;}
+.brand-mark{width:32px;height:32px;border-radius:50%;background:linear-gradient(135deg,var(--teal),var(--teal-dim));display:flex;align-items:center;justify-content:center;flex:none;}
+.brand-mark svg{width:18px;height:18px;}
+.brand-name{font-weight:800;letter-spacing:.3px;text-transform:uppercase;font-size:15px;}
+.brand-sub{font-size:11px;color:var(--text-dim);}
+
+#project-search{margin:12px;padding:8px 10px;background:var(--panel-2);border:1px solid var(--line);border-radius:8px;color:var(--text);width:calc(100% - 24px);}
+#project-list{flex:1;overflow-y:auto;padding:0 8px;}
+.project-item{padding:10px 10px;border-radius:8px;cursor:pointer;margin-bottom:2px;display:flex;justify-content:space-between;align-items:center;gap:8px;}
+.project-item:hover{background:var(--panel-2);}
+.project-item.active{background:rgba(45,217,196,.12);border:1px solid var(--teal-dim);}
+.project-item .pname{font-weight:600;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.project-item .pdomain{font-size:11px;color:var(--text-dim);}
+.project-item .pdel{opacity:0;color:var(--text-dim);font-size:14px;}
+.project-item:hover .pdel{opacity:1;}
+#add-project-btn{margin:10px;padding:9px;background:var(--teal);border:none;border-radius:8px;color:var(--charcoal);font-weight:700;}
+#sidebar-footer{padding:10px;border-top:1px solid var(--line);}
+#sidebar-footer button{width:100%;background:none;border:1px solid var(--line);color:var(--text-dim);border-radius:8px;padding:8px;font-size:12px;}
+#sidebar-footer button:hover{color:var(--text);border-color:var(--teal-dim);}
+
+/* Main */
+#main{flex:1;display:flex;flex-direction:column;overflow:hidden;}
+#topbar{padding:14px 24px;border-bottom:1px solid var(--line);display:flex;align-items:center;justify-content:space-between;background:var(--panel);}
+#topbar h1{font-size:17px;margin:0;font-weight:700;}
+#topbar .client-domain{color:var(--text-dim);font-size:12px;font-family:var(--mono);}
+#tabs{display:flex;gap:2px;padding:0 24px;background:var(--panel);border-bottom:1px solid var(--line);}
+.tab-btn{padding:11px 14px;background:none;border:none;color:var(--text-dim);font-weight:600;font-size:13px;border-bottom:2px solid transparent;}
+.tab-btn.active{color:var(--teal);border-bottom-color:var(--teal);}
+.tab-btn:hover{color:var(--text);}
+
+#content{flex:1;overflow-y:auto;padding:22px 24px 60px;}
+.empty-state{display:flex;flex-direction:column;align-items:center;justify-content:center;height:70%;color:var(--text-dim);text-align:center;gap:10px;}
+
+/* Timeline scrubber — signature element */
+#scrubber-wrap{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:14px 16px;margin-bottom:18px;}
+#scrubber-label{display:flex;justify-content:space-between;font-size:12px;color:var(--text-dim);margin-bottom:8px;font-family:var(--mono);}
+#scrubber{width:100%;accent-color:var(--teal);}
+#scrubber-date{color:var(--teal);font-weight:700;}
+
+/* Cards / grid */
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:12px;margin-bottom:20px;}
+.stat-card{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:14px 16px;}
+.stat-card .label{font-size:11px;color:var(--text-dim);text-transform:uppercase;letter-spacing:.06em;}
+.stat-card .value{font-family:var(--mono);font-size:24px;font-weight:700;margin-top:6px;}
+.stat-card .delta{font-size:12px;margin-top:4px;font-family:var(--mono);}
+.delta.up{color:var(--green);} .delta.down{color:var(--coral);} .delta.flat{color:var(--text-dim);}
+
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:16px;margin-bottom:18px;}
+.panel h2{font-size:14px;margin:0 0 12px;font-weight:700;}
+.panel h3{font-size:12px;color:var(--text-dim);text-transform:uppercase;letter-spacing:.05em;margin:16px 0 8px;}
+
+table{width:100%;border-collapse:collapse;font-size:13px;}
+th{text-align:left;color:var(--text-dim);font-weight:600;font-size:11px;text-transform:uppercase;letter-spacing:.04em;padding:8px 10px;border-bottom:1px solid var(--line);}
+td{padding:9px 10px;border-bottom:1px solid var(--line);font-family:var(--mono);}
+tr:hover td{background:var(--panel-2);}
+.tag{display:inline-block;padding:2px 8px;border-radius:20px;font-size:11px;font-family:var(--sans);font-weight:600;}
+.tag.free{background:rgba(74,222,128,.15);color:var(--green);}
+.tag.paid{background:rgba(232,163,61,.15);color:var(--amber);}
+.tag.good{background:rgba(74,222,128,.15);color:var(--green);}
+.tag.warn{background:rgba(232,163,61,.15);color:var(--amber);}
+.tag.bad{background:rgba(255,107,107,.15);color:var(--coral);}
+
+.btn{background:var(--teal);color:var(--charcoal);border:none;border-radius:7px;padding:8px 14px;font-weight:700;font-size:12px;}
+.btn.secondary{background:none;border:1px solid var(--line);color:var(--text);}
+.btn.secondary:hover{border-color:var(--teal-dim);}
+.btn.danger{background:none;border:1px solid var(--coral);color:var(--coral);}
+.btn:disabled{opacity:.5;cursor:not-allowed;}
+.row{display:flex;gap:10px;align-items:center;flex-wrap:wrap;}
+.row.between{justify-content:space-between;}
+input[type=text],input[type=number],input[type=password],select,textarea{
+  background:var(--panel-2);border:1px solid var(--line);color:var(--text);border-radius:7px;padding:8px 10px;font-size:13px;
+}
+textarea{width:100%;min-height:110px;resize:vertical;}
+label{font-size:12px;color:var(--text-dim);display:block;margin-bottom:4px;}
+.field{margin-bottom:10px;}
+
+/* Modal */
+.modal-bg{position:fixed;inset:0;background:rgba(0,0,0,.6);display:flex;align-items:center;justify-content:center;z-index:100;}
+.modal{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:22px;width:460px;max-width:92vw;max-height:86vh;overflow-y:auto;}
+.modal h2{margin-top:0;}
+.modal-close{float:right;background:none;border:none;color:var(--text-dim);font-size:18px;}
+
+.spark{display:flex;align-items:flex-end;gap:2px;height:34px;}
+.spark div{flex:1;background:var(--teal-dim);border-radius:1px;}
+
+.notice{font-size:12px;color:var(--amber);background:rgba(232,163,61,.1);border:1px solid rgba(232,163,61,.3);border-radius:8px;padding:10px 12px;margin-bottom:14px;}
+.small{font-size:11px;color:var(--text-dim);}
+.pos{color:var(--green);} .neg{color:var(--coral);}
+</style>
+</head>
+<body>
+
+<div id="app">
+  <div id="sidebar">
+    <div class="brand">
+      <div class="brand-mark">
+        <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <path d="M8 4H16C16.5523 4 17 4.44772 17 5V6.5C17 7.05228 16.5523 7.5 16 7.5H10.5V10.2L15.5 15.2C15.8905 15.5905 15.8905 16.2237 15.5 16.6143L14.6143 17.5C14.2237 17.8905 13.5905 17.8905 13.2 17.5L8 12.3V19C8 19.5523 7.55228 20 7 20H5.5C4.94772 20 4.5 19.5523 4.5 19V5C4.5 4.44772 4.94772 4 5.5 4H8Z" fill="white"/>
+        </svg>
+      </div>
+      <div>
+        <div class="brand-name">Edge</div>
+        <div class="brand-sub">SEO Command Center</div>
+      </div>
+    </div>
+    <input id="project-search" type="text" placeholder="Search clients…">
+    <div id="project-list"></div>
+    <button id="add-project-btn">+ New Client Project</button>
+    <div id="sidebar-footer">
+      <button id="settings-btn">⚙ API &amp; Firebase Settings</button>
+    </div>
+  </div>
+
+  <div id="main">
+    <div id="topbar">
+      <div>
+        <h1 id="topbar-title">Select or create a client project</h1>
+        <div class="client-domain" id="topbar-domain"></div>
+      </div>
+      <div class="row">
+        <button class="btn secondary" id="run-checks-btn" style="display:none;">▶ Run today's checks</button>
+      </div>
+    </div>
+    <div id="tabs" style="display:none;">
+      <button class="tab-btn" data-tab="dashboard">Dashboard</button>
+      <button class="tab-btn" data-tab="keywords">Keywords</button>
+      <button class="tab-btn" data-tab="backlinks">Backlinks</button>
+      <button class="tab-btn" data-tab="competitors">Competitors</button>
+      <button class="tab-btn" data-tab="content">Content Audit</button>
+      <button class="tab-btn" data-tab="llm">LLM Visibility</button>
+    </div>
+    <div id="content"></div>
+  </div>
+</div>
+
+<script>
+/* =========================================================================
+   EDGE — single-file SEO command center
+   -------------------------------------------------------------------------
+   SECURITY NOTE (read this before pushing to a public repo):
+   This file calls DataForSEO, and optionally OpenAI / Anthropic / Perplexity,
+   directly from the browser using credentials you paste into Settings.
+   Those credentials are stored in *your browser's* localStorage only —
+   they are never written into this file or committed to git. BUT: if you
+   ever hardcode a key into this file itself and push it, anyone can read
+   it from "view source" on GitHub Pages. For real production use, put a
+   thin proxy (Cloudflare Worker / Firebase Cloud Function) between this
+   page and DataForSEO/LLM APIs so the keys live server-side instead.
+   ========================================================================= */
+
+// ---------- local settings (Firebase config, DataForSEO creds, LLM keys) ----------
+const LS_KEY = 'rankwell_settings_v1';
+function loadSettings(){
+  try{ return JSON.parse(localStorage.getItem(LS_KEY)) || {}; }catch(e){ return {}; }
+}
+function saveSettings(s){ localStorage.setItem(LS_KEY, JSON.stringify(s)); }
+let settings = loadSettings();
+
+let db = null, auth = null, fbApp = null;
+function initFirebase(){
+  if(!settings.firebaseConfig) return false;
+  try{
+    if(fbApp) return true;
+    fbApp = firebase.initializeApp(settings.firebaseConfig);
+    db = firebase.firestore();
+    auth = firebase.auth();
+    auth.signInAnonymously().catch(e=>console.error('auth error', e));
+    return true;
+  }catch(e){ console.error(e); return false; }
+}
+
+// ---------- state ----------
+let state = {
+  projects: [],
+  currentProjectId: null,
+  currentTab: 'dashboard',
+  scrubberDates: [],
+  scrubberIndex: 0,
+  keywords: [],
+  backlinks: [],
+  competitors: [],
+  contentAudits: [],
+  llmLogs: [],
+  snapshots: {}, // date -> snapshot doc
+};
+
+function currentProject(){
+  return state.projects.find(p=>p.id===state.currentProjectId) || null;
+}
+
+// =========================================================================
+// FIRESTORE HELPERS
+// =========================================================================
+function projRef(id){ return db.collection('projects').doc(id); }
+function subRef(id, sub){ return projRef(id).collection(sub); }
+
+function listenProjects(){
+  db.collection('projects').orderBy('createdAt','desc').onSnapshot(snap=>{
+    state.projects = snap.docs.map(d=>({id:d.id, ...d.data()}));
+    renderSidebar();
+    if(!state.currentProjectId && state.projects.length){
+      selectProject(state.projects[0].id);
+    }
+  });
+}
+
+function createProject(name, domain, industry){
+  return db.collection('projects').add({
+    name, domain, industry,
+    createdAt: firebase.firestore.FieldValue.serverTimestamp()
+  });
+}
+
+function deleteProject(id){
+  if(!confirm('Delete this client project and all its data? This cannot be undone.')) return;
+  projRef(id).delete();
+  if(state.currentProjectId===id){ state.currentProjectId=null; renderMain(); }
+}
+
+function selectProject(id){
+  state.currentProjectId = id;
+  state.scrubberIndex = 0;
+  attachProjectListeners(id);
+  renderSidebar();
+  renderTopbar();
+  document.getElementById('tabs').style.display = 'flex';
+  document.getElementById('run-checks-btn').style.display = 'inline-block';
+  setTab('dashboard');
+}
+
+let unsub = [];
+function attachProjectListeners(id){
+  unsub.forEach(u=>u());
+  unsub = [];
+  unsub.push(subRef(id,'keywords').onSnapshot(s=>{ state.keywords = s.docs.map(d=>({id:d.id,...d.data()})); if(state.currentTab==='keywords'||state.currentTab==='dashboard') renderContent(); }));
+  unsub.push(subRef(id,'backlinks').onSnapshot(s=>{ state.backlinks = s.docs.map(d=>({id:d.id,...d.data()})); if(state.currentTab==='backlinks'||state.currentTab==='dashboard') renderContent(); }));
+  unsub.push(subRef(id,'competitors').onSnapshot(s=>{ state.competitors = s.docs.map(d=>({id:d.id,...d.data()})); if(state.currentTab==='competitors') renderContent(); }));
+  unsub.push(subRef(id,'contentAudits').onSnapshot(s=>{ state.contentAudits = s.docs.map(d=>({id:d.id,...d.data()})).sort((a,b)=>(b.date||'').localeCompare(a.date||'')); if(state.currentTab==='content') renderContent(); }));
+  unsub.push(subRef(id,'llmLogs').onSnapshot(s=>{ state.llmLogs = s.docs.map(d=>({id:d.id,...d.data()})).sort((a,b)=>(b.date||'').localeCompare(a.date||'')); if(state.currentTab==='llm') renderContent(); }));
+  unsub.push(subRef(id,'snapshots').onSnapshot(s=>{
+    state.snapshots = {};
+    s.docs.forEach(d=>state.snapshots[d.id]=d.data());
+    state.scrubberDates = Object.keys(state.snapshots).sort();
+    state.scrubberIndex = state.scrubberDates.length-1;
+    if(state.currentTab==='dashboard') renderContent();
+  }));
+}
+
+function todayStr(d){ d = d || new Date(); return d.toISOString().slice(0,10); }
+
+// =========================================================================
+// DATAFORSEO
+// =========================================================================
+function dfsAuthHeader(){
+  return 'Basic ' + btoa(settings.dfsLogin + ':' + settings.dfsPassword);
+}
+async function dfsPost(path, tasks){
+  if(!settings.dfsLogin || !settings.dfsPassword) throw new Error('Add your DataForSEO login/password in Settings first.');
+  const res = await fetch('https://api.dataforseo.com/v3' + path, {
+    method:'POST',
+    headers:{ 'Authorization': dfsAuthHeader(), 'Content-Type':'application/json' },
+    body: JSON.stringify(tasks)
+  });
+  if(!res.ok) throw new Error('DataForSEO error ' + res.status);
+  const json = await res.json();
+  if(json.status_code && json.status_code !== 20000) throw new Error(json.status_message || 'DataForSEO task error');
+  return json;
+}
+
+// Live SERP for one keyword, granular by city/region via location_name string
+// e.g. "Austin,Texas,United States" or just "United States"
+async function dfsLiveSerp(keyword, locationName, languageCode){
+  const json = await dfsPost('/serp/google/organic/live/advanced', [{
+    keyword, location_name: locationName || 'United States',
+    language_code: languageCode || 'en', device:'desktop', os:'windows', depth: 100
+  }]);
+  const result = json.tasks && json.tasks[0] && json.tasks[0].result && json.tasks[0].result[0];
+  return result;
+}
+
+function findDomainRank(serpResult, domain){
+  if(!serpResult || !serpResult.items) return null;
+  domain = (domain||'').replace(/^https?:\/\//,'').replace(/^www\./,'').replace(/\/$/,'');
+  for(const item of serpResult.items){
+    if(item.type !== 'organic') continue;
+    const d = (item.domain||'').replace(/^www\./,'');
+    if(d === domain || d.endsWith('.'+domain)){
+      return { position: item.rank_absolute, url: item.url, title: item.title };
+    }
+  }
+  return null;
+}
+
+async function dfsKeywordIdeas(seedKeyword, locationCode, languageCode){
+  const json = await dfsPost('/dataforseo_labs/google/keyword_ideas/live', [{
+    keywords: [seedKeyword],
+    location_code: locationCode || 2840, // 2840 = United States
+    language_code: languageCode || 'en',
+    limit: 30
+  }]);
+  const items = (json.tasks && json.tasks[0] && json.tasks[0].result && json.tasks[0].result[0] && json.tasks[0].result[0].items) || [];
+  return items.map(i=>({
+    keyword: i.keyword,
+    volume: i.keyword_info && i.keyword_info.search_volume,
+    cpc: i.keyword_info && i.keyword_info.cpc,
+    competition: i.keyword_info && i.keyword_info.competition_level,
+    trend: i.keyword_info && i.keyword_info.monthly_searches
+  }));
+}
+
+async function dfsBacklinkSummary(target){
+  const json = await dfsPost('/backlinks/summary/live', [{ target, internal_list_limit: 10 }]);
+  return json.tasks && json.tasks[0] && json.tasks[0].result && json.tasks[0].result[0];
+}
+
+async function dfsBacklinkList(target, limit){
+  const json = await dfsPost('/backlinks/backlinks/live', [{ target, limit: limit||100, mode:'as_is' }]);
+  const items = (json.tasks && json.tasks[0] && json.tasks[0].result && json.tasks[0].result[0] && json.tasks[0].result[0].items) || [];
+  return items;
+}
+
+// "Low hanging fruit" — domains linking to competitors but NOT to you yet
+async function dfsDomainIntersection(yourDomain, competitorDomains){
+  const json = await dfsPost('/backlinks/domain_intersection/live', [{
+    targets: [yourDomain, ...competitorDomains],
+    limit: 100
+  }]);
+  return (json.tasks && json.tasks[0] && json.tasks[0].result) || [];
+}
+
+// =========================================================================
+// CURATED BACKLINK DIRECTORY SEED LIST (starting point — expand per industry)
+// =========================================================================
+const BACKLINK_DIRECTORIES = [
+  {name:'Google Business Profile', url:'https://business.google.com', type:'free', category:'Local'},
+  {name:'Bing Places', url:'https://www.bingplaces.com', type:'free', category:'Local'},
+  {name:'Apple Business Connect', url:'https://businessconnect.apple.com', type:'free', category:'Local'},
+  {name:'Yelp', url:'https://biz.yelp.com', type:'free', category:'Local'},
+  {name:'Better Business Bureau', url:'https://www.bbb.org', type:'paid', category:'Trust/Local'},
+  {name:'Chamber of Commerce (local)', url:'', type:'paid', category:'Local'},
+  {name:'Yellow Pages', url:'https://www.yellowpages.com', type:'free', category:'Directory'},
+  {name:'Foursquare', url:'https://foursquare.com', type:'free', category:'Local'},
+  {name:'Nextdoor Business', url:'https://business.nextdoor.com', type:'free', category:'Local'},
+  {name:'Crunchbase', url:'https://www.crunchbase.com', type:'free', category:'Business'},
+  {name:'Clutch', url:'https://clutch.co', type:'paid', category:'B2B'},
+  {name:'G2', url:'https://www.g2.com', type:'paid', category:'B2B/Reviews'},
+  {name:'Trustpilot', url:'https://www.trustpilot.com', type:'free', category:'Reviews'},
+  {name:'HomeAdvisor', url:'https://www.homeadvisor.com', type:'paid', category:'Home Services'},
+  {name:'Angi', url:'https://www.angi.com', type:'paid', category:'Home Services'},
+  {name:'Thumbtack', url:'https://www.thumbtack.com', type:'paid', category:'Local Services'},
+  {name:'Houzz', url:'https://www.houzz.com', type:'free', category:'Home/Design'},
+  {name:'Avvo', url:'https://www.avvo.com', type:'free', category:'Legal'},
+  {name:'Healthgrades', url:'https://www.healthgrades.com', type:'paid', category:'Medical'},
+  {name:'Manta', url:'https://www.manta.com', type:'free', category:'Directory'},
+];
+
+// =========================================================================
+// RENDERING
+// =========================================================================
+function renderSidebar(){
+  const q = (document.getElementById('project-search').value||'').toLowerCase();
+  const list = document.getElementById('project-list');
+  list.innerHTML = state.projects
+    .filter(p=> (p.name||'').toLowerCase().includes(q) || (p.domain||'').toLowerCase().includes(q))
+    .map(p=>`
+      <div class="project-item ${p.id===state.currentProjectId?'active':''}" onclick="selectProject('${p.id}')">
+        <div>
+          <div class="pname">${escapeHtml(p.name)}</div>
+          <div class="pdomain">${escapeHtml(p.domain||'')}</div>
+        </div>
+        <span class="pdel" onclick="event.stopPropagation(); deleteProject('${p.id}')">✕</span>
+      </div>`).join('') || '<div class="small" style="padding:10px;">No client projects yet.</div>';
+}
+
+function renderTopbar(){
+  const p = currentProject();
+  document.getElementById('topbar-title').textContent = p ? p.name : 'Select or create a client project';
+  document.getElementById('topbar-domain').textContent = p ? (p.domain + (p.industry?' · '+p.industry:'')) : '';
+}
+
+function setTab(tab){
+  state.currentTab = tab;
+  document.querySelectorAll('.tab-btn').forEach(b=>b.classList.toggle('active', b.dataset.tab===tab));
+  renderContent();
+}
+
+function renderMain(){
+  renderSidebar();
+  renderTopbar();
+  if(!state.currentProjectId){
+    document.getElementById('tabs').style.display='none';
+    document.getElementById('run-checks-btn').style.display='none';
+    document.getElementById('content').innerHTML = `
+      <div class="empty-state">
+        <div style="font-size:34px;">📊</div>
+        <div style="font-weight:700;font-size:16px;color:var(--text);">Create your first client project</div>
+        <div class="small">Add a project on the left, then connect Firebase &amp; DataForSEO in Settings.</div>
+      </div>`;
+  } else {
+    renderContent();
+  }
+}
+
+function scrubberHtml(){
+  const dates = state.scrubberDates;
+  if(!dates.length) return '<div class="notice">No daily snapshots yet. Click "Run today\'s checks" to create the first one.</div>';
+  const idx = Math.min(state.scrubberIndex, dates.length-1);
+  return `
+    <div id="scrubber-wrap">
+      <div id="scrubber-label">
+        <span>Viewing snapshot: <span id="scrubber-date">${dates[idx]}</span> ${idx===dates.length-1?'(today)':''}</span>
+        <span>${dates.length} day${dates.length===1?'':'s'} of history</span>
+      </div>
+      <input type="range" id="scrubber" min="0" max="${dates.length-1}" value="${idx}" oninput="onScrub(this.value)">
+    </div>`;
+}
+function onScrub(v){
+  state.scrubberIndex = parseInt(v,10);
+  renderContent();
+}
+
+function deltaHtml(curr, prev, higherIsBetter){
+  if(prev===undefined || prev===null || curr===undefined || curr===null) return '<span class="delta flat">—</span>';
+  const d = curr - prev;
+  if(d===0) return '<span class="delta flat">± 0</span>';
+  const good = higherIsBetter ? d>0 : d<0;
+  return `<span class="delta ${good?'up':'down'}">${d>0?'+':''}${d}</span>`;
+}
+
+function renderDashboard(){
+  const dates = state.scrubberDates;
+  const idx = Math.min(state.scrubberIndex, dates.length-1);
+  const snap = dates.length ? state.snapshots[dates[idx]] : null;
+  const prevSnap = idx>0 ? state.snapshots[dates[idx-1]] : null;
+
+  const kwCount = state.keywords.length;
+  const avgPos = snap ? snap.avgPosition : null;
+  const prevAvgPos = prevSnap ? prevSnap.avgPosition : null;
+  const blCount = snap ? snap.backlinkCount : null;
+  const prevBl = prevSnap ? prevSnap.backlinkCount : null;
+  const refDomains = snap ? snap.referringDomains : null;
+  const prevRef = prevSnap ? prevSnap.referringDomains : null;
+
+  document.getElementById('content').innerHTML = `
+    ${scrubberHtml()}
+    <div class="grid">
+      <div class="stat-card"><div class="label">Keywords tracked</div><div class="value">${kwCount}</div></div>
+      <div class="stat-card"><div class="label">Avg. position</div><div class="value">${avgPos ?? '—'}</div>${deltaHtml(avgPos,prevAvgPos,false)}</div>
+      <div class="stat-card"><div class="label">Total backlinks</div><div class="value">${blCount ?? '—'}</div>${deltaHtml(blCount,prevBl,true)}</div>
+      <div class="stat-card"><div class="label">Referring domains</div><div class="value">${refDomains ?? '—'}</div>${deltaHtml(refDomains,prevRef,true)}</div>
+    </div>
+    <div class="panel">
+      <h2>What changed</h2>
+      ${prevSnap ? `
+        <table>
+          <tr><td>Avg. position</td><td>${prevSnap.avgPosition ?? '—'} → ${snap.avgPosition ?? '—'}</td></tr>
+          <tr><td>Backlinks</td><td>${prevSnap.backlinkCount ?? '—'} → ${snap.backlinkCount ?? '—'}</td></tr>
+          <tr><td>Referring domains</td><td>${prevSnap.referringDomains ?? '—'} → ${snap.referringDomains ?? '—'}</td></tr>
+        </table>` : '<div class="small">Run checks on at least two different days to see day-over-day change here.</div>'}
+    </div>
+    <div class="panel">
+      <h2>Keyword snapshot for this date</h2>
+      ${renderKeywordTableForDate(dates[idx])}
+    </div>
+  `;
+}
+
+function renderKeywordTableForDate(date){
+  if(!date) return '<div class="small">No data yet.</div>';
+  const rows = state.keywords.map(k=>{
+    const hist = (k.history||{})[date];
+    const pos = hist ? hist.position : null;
+    return `<tr><td>${escapeHtml(k.keyword)}</td><td>${escapeHtml(k.city||k.locationName||'—')}</td><td>${pos ?? 'not ranked (100+)'}</td></tr>`;
+  }).join('');
+  return `<table><tr><th>Keyword</th><th>Location</th><th>Position</th></tr>${rows || '<tr><td colspan="3" class="small">No keywords yet — add some in the Keywords tab.</td></tr>'}</table>`;
+}
+
+function renderKeywords(){
+  const p = currentProject();
+  document.getElementById('content').innerHTML = `
+    <div class="panel">
+      <h2>Add a keyword to track</h2>
+      <div class="row">
+        <div class="field"><label>Keyword</label><input type="text" id="kw-input" placeholder="e.g. emergency plumber austin"></div>
+        <div class="field"><label>City / location (granular)</label><input type="text" id="kw-location" placeholder="Austin,Texas,United States"></div>
+        <div class="field"><label>Target URL (optional)</label><input type="text" id="kw-url" placeholder="/services/plumbing"></div>
+        <button class="btn" onclick="addKeyword()">+ Add keyword</button>
+      </div>
+      <div class="small">Location is passed to DataForSEO as a location_name string — as specific as "Austin,Texas,United States" for city-level real SERP data.</div>
+    </div>
+
+    <div class="panel">
+      <h2>Tracked keywords</h2>
+      <table id="kw-table">
+        <tr><th>Keyword</th><th>Location</th><th>Latest position</th><th>Implemented?</th><th></th></tr>
+        ${state.keywords.map(k=>`
+          <tr>
+            <td>${escapeHtml(k.keyword)}</td>
+            <td>${escapeHtml(k.locationName||'')}</td>
+            <td>${k.lastPosition ?? '—'}</td>
+            <td><input type="checkbox" ${k.implemented?'checked':''} onchange="toggleImplemented('${k.id}', this.checked)"></td>
+            <td><button class="btn secondary" onclick="checkOneKeyword('${k.id}')">Check now</button>
+                <button class="btn danger" onclick="deleteKeyword('${k.id}')">Remove</button></td>
+          </tr>`).join('') || '<tr><td colspan="5" class="small">No keywords yet.</td></tr>'}
+      </table>
+    </div>
+
+    <div class="panel">
+      <h2>Keyword suggestions (live search volume &amp; trend via DataForSEO)</h2>
+      <div class="row">
+        <input type="text" id="seed-kw" placeholder="Seed keyword, e.g. 'plumber'">
+        <input type="text" id="seed-loc-code" placeholder="Location code (2840 = US)" value="2840">
+        <button class="btn" onclick="loadKeywordIdeas()">Get suggestions</button>
+      </div>
+      <div id="kw-ideas"></div>
+    </div>
+  `;
+}
+
+async function addKeyword(){
+  const keyword = document.getElementById('kw-input').value.trim();
+  const locationName = document.getElementById('kw-location').value.trim();
+  const targetUrl = document.getElementById('kw-url').value.trim();
+  if(!keyword) return alert('Enter a keyword');
+  await subRef(state.currentProjectId,'keywords').add({
+    keyword, locationName, targetUrl, implemented:false, history:{}
+  });
+  document.getElementById('kw-input').value='';
+  document.getElementById('kw-location').value='';
+}
+function deleteKeyword(id){ subRef(state.currentProjectId,'keywords').doc(id).delete(); }
+function toggleImplemented(id, val){ subRef(state.currentProjectId,'keywords').doc(id).update({implemented: val}); }
+
+async function checkOneKeyword(id){
+  const p = currentProject();
+  const kw = state.keywords.find(k=>k.id===id);
+  if(!kw) return;
+  try{
+    const result = await dfsLiveSerp(kw.keyword, kw.locationName, 'en');
+    const found = findDomainRank(result, p.domain);
+    const date = todayStr();
+    const history = kw.history || {};
+    history[date] = { position: found ? found.position : null, url: found ? found.url : null };
+    await subRef(state.currentProjectId,'keywords').doc(id).update({
+      history, lastPosition: found ? found.position : null, lastChecked: date
+    });
+  }catch(e){ alert('DataForSEO error: ' + e.message); }
+}
+
+async function loadKeywordIdeas(){
+  const seed = document.getElementById('seed-kw').value.trim();
+  const locCode = parseInt(document.getElementById('seed-loc-code').value.trim()||'2840',10);
+  if(!seed) return;
+  document.getElementById('kw-ideas').innerHTML = '<div class="small">Loading…</div>';
+  try{
+    const ideas = await dfsKeywordIdeas(seed, locCode, 'en');
+    document.getElementById('kw-ideas').innerHTML = `
+      <table><tr><th>Keyword</th><th>Volume</th><th>Competition</th><th>CPC</th><th></th></tr>
+      ${ideas.map(i=>`<tr><td>${escapeHtml(i.keyword)}</td><td>${i.volume??'—'}</td><td>${i.competition??'—'}</td><td>${i.cpc??'—'}</td>
+        <td><button class="btn secondary" onclick="addKeywordFromIdea('${escapeAttr(i.keyword)}')">+ Track</button></td></tr>`).join('')}
+      </table>`;
+  }catch(e){ document.getElementById('kw-ideas').innerHTML = `<div class="notice">${e.message}</div>`; }
+}
+function addKeywordFromIdea(keyword){
+  subRef(state.currentProjectId,'keywords').add({ keyword, locationName:'', targetUrl:'', implemented:false, history:{} });
+}
+
+function renderBacklinks(){
+  const p = currentProject();
+  document.getElementById('content').innerHTML = `
+    <div class="panel">
+      <h2>Backlink profile</h2>
+      <div class="row">
+        <button class="btn" onclick="loadBacklinkSummary()">Pull latest summary from DataForSEO</button>
+      </div>
+      <div id="bl-summary" style="margin-top:10px;"></div>
+    </div>
+
+    <div class="panel">
+      <h2>Low-hanging fruit — directories &amp; opportunities</h2>
+      <div class="small" style="margin-bottom:8px;">Curated starter list. Track submission status per directory; use "Find more opportunities" for a competitor-gap search via DataForSEO.</div>
+      <table>
+        <tr><th>Directory</th><th>Category</th><th>Type</th><th>Status</th></tr>
+        ${BACKLINK_DIRECTORIES.map((d,i)=>`
+          <tr>
+            <td>${d.url?`<a href="${d.url}" target="_blank">${d.name}</a>`:d.name}</td>
+            <td>${d.category}</td>
+            <td><span class="tag ${d.type}">${d.type}</span></td>
+            <td>
+              <select onchange="setDirStatus(${i}, this.value)">
+                <option ${dirStatus(i)==='not_started'?'selected':''} value="not_started">Not started</option>
+                <option ${dirStatus(i)==='submitted'?'selected':''} value="submitted">Submitted</option>
+                <option ${dirStatus(i)==='live'?'selected':''} value="live">Live</option>
+              </select>
+            </td>
+          </tr>`).join('')}
+      </table>
+      <h3>Find more opportunities</h3>
+      <div class="row">
+        <input type="text" id="gap-competitors" placeholder="competitor1.com, competitor2.com">
+        <button class="btn" onclick="findBacklinkGap()">Run gap search (in-depth)</button>
+      </div>
+      <div id="gap-results"></div>
+    </div>
+
+    <div class="panel">
+      <h2>Recent backlinks (from DataForSEO)</h2>
+      <button class="btn secondary" onclick="loadBacklinkList()">Load recent backlinks</button>
+      <div id="bl-list"></div>
+    </div>
+  `;
+}
+
+function dirKey(){ return 'dirstatus_' + state.currentProjectId; }
+function dirStatus(i){
+  const store = JSON.parse(localStorage.getItem(dirKey())||'{}');
+  return store[i] || 'not_started';
+}
+function setDirStatus(i, val){
+  const store = JSON.parse(localStorage.getItem(dirKey())||'{}');
+  store[i] = val;
+  localStorage.setItem(dirKey(), JSON.stringify(store));
+}
+
+async function loadBacklinkSummary(){
+  const p = currentProject();
+  document.getElementById('bl-summary').innerHTML = '<div class="small">Loading…</div>';
+  try{
+    const s = await dfsBacklinkSummary(p.domain);
+    document.getElementById('bl-summary').innerHTML = `
+      <div class="grid">
+        <div class="stat-card"><div class="label">Total backlinks</div><div class="value">${s.backlinks ?? '—'}</div></div>
+        <div class="stat-card"><div class="label">Referring domains</div><div class="value">${s.referring_domains ?? '—'}</div></div>
+        <div class="stat-card"><div class="label">Dofollow</div><div class="value">${s.referring_links_types?.dofollow ?? '—'}</div></div>
+        <div class="stat-card"><div class="label">Broken backlinks</div><div class="value">${s.broken_backlinks ?? '—'}</div></div>
+      </div>`;
+  }catch(e){ document.getElementById('bl-summary').innerHTML = `<div class="notice">${e.message}</div>`; }
+}
+
+async function loadBacklinkList(){
+  const p = currentProject();
+  document.getElementById('bl-list').innerHTML = '<div class="small">Loading…</div>';
+  try{
+    const items = await dfsBacklinkList(p.domain, 50);
+    document.getElementById('bl-list').innerHTML = `
+      <table><tr><th>Source</th><th>Anchor</th><th>Dofollow</th><th>First seen</th></tr>
+      ${items.map(b=>`<tr><td>${escapeHtml(b.url_from||'')}</td><td>${escapeHtml(b.anchor||'')}</td><td>${b.dofollow?'Yes':'No'}</td><td>${b.first_seen||''}</td></tr>`).join('')}
+      </table>`;
+  }catch(e){ document.getElementById('bl-list').innerHTML = `<div class="notice">${e.message}</div>`; }
+}
+
+async function findBacklinkGap(){
+  const p = currentProject();
+  const comps = document.getElementById('gap-competitors').value.split(',').map(s=>s.trim()).filter(Boolean);
+  if(!comps.length) return alert('Add at least one competitor domain');
+  document.getElementById('gap-results').innerHTML = '<div class="small">Searching…</div>';
+  try{
+    const result = await dfsDomainIntersection(p.domain, comps);
+    const items = (result[0] && result[0].items) || [];
+    document.getElementById('gap-results').innerHTML = `
+      <div class="small">Domains linking to your competitors but not yet to you:</div>
+      <table><tr><th>Domain</th><th>Links to competitors</th><th>Links to you</th></tr>
+      ${items.slice(0,50).map(it=>`<tr><td>${escapeHtml(it.intersection_target||'')}</td><td>${JSON.stringify(it.first_domain_ranked_serps||{})}</td><td>${it.second_domain_ranked_serps?'Yes':'No'}</td></tr>`).join('')}
+      </table>`;
+  }catch(e){ document.getElementById('gap-results').innerHTML = `<div class="notice">${e.message}</div>`; }
+}
+
+function renderCompetitors(){
+  document.getElementById('content').innerHTML = `
+    <div class="panel">
+      <h2>Competitors</h2>
+      <div class="row">
+        <input type="text" id="comp-domain" placeholder="competitor.com">
+        <input type="text" id="comp-name" placeholder="Name (optional)">
+        <button class="btn" onclick="addCompetitor()">+ Add competitor</button>
+      </div>
+      <table><tr><th>Name</th><th>Domain</th><th></th></tr>
+      ${state.competitors.map(c=>`
+        <tr><td>${escapeHtml(c.name||'')}</td><td>${escapeHtml(c.domain)}</td>
+        <td><button class="btn secondary" onclick="compareCompetitor('${c.id}','${escapeAttr(c.domain)}')">Compare</button>
+            <button class="btn danger" onclick="deleteCompetitor('${c.id}')">Remove</button></td></tr>`).join('') || '<tr><td colspan="3" class="small">No competitors added yet.</td></tr>'}
+      </table>
+      <div id="comp-compare"></div>
+    </div>
+  `;
+}
+function addCompetitor(){
+  const domain = document.getElementById('comp-domain').value.trim();
+  const name = document.getElementById('comp-name').value.trim();
+  if(!domain) return;
+  subRef(state.currentProjectId,'competitors').add({domain, name});
+}
+function deleteCompetitor(id){ subRef(state.currentProjectId,'competitors').doc(id).delete(); }
+
+async function compareCompetitor(id, domain){
+  const p = currentProject();
+  document.getElementById('comp-compare').innerHTML = '<div class="small">Loading comparison…</div>';
+  try{
+    const [yours, theirs] = await Promise.all([dfsBacklinkSummary(p.domain), dfsBacklinkSummary(domain)]);
+    document.getElementById('comp-compare').innerHTML = `
+      <table>
+        <tr><th></th><th>You (${p.domain})</th><th>${domain}</th></tr>
+        <tr><td>Backlinks</td><td>${yours.backlinks??'—'}</td><td>${theirs.backlinks??'—'}</td></tr>
+        <tr><td>Referring domains</td><td>${yours.referring_domains??'—'}</td><td>${theirs.referring_domains??'—'}</td></tr>
+        <tr><td>Broken backlinks</td><td>${yours.broken_backlinks??'—'}</td><td>${theirs.broken_backlinks??'—'}</td></tr>
+      </table>`;
+  }catch(e){ document.getElementById('comp-compare').innerHTML = `<div class="notice">${e.message}</div>`; }
+}
+
+// ---------- Content SEO audit (heuristic scoring, no external calls needed) ----------
+const PAGE_TYPE_RULES = {
+  home:    { minWords: 300,  maxWords: 900,  needsH1:true, needsFAQ:false },
+  service: { minWords: 600,  maxWords: 1500, needsH1:true, needsFAQ:false },
+  blog:    { minWords: 900,  maxWords: 2500, needsH1:true, needsFAQ:false },
+  faq:     { minWords: 200,  maxWords: 2000, needsH1:false, needsFAQ:true },
+};
+
+function auditContent(text, pageType, keyword){
+  const rules = PAGE_TYPE_RULES[pageType] || PAGE_TYPE_RULES.service;
+  const words = text.trim().split(/\s+/).filter(Boolean);
+  const wordCount = words.length;
+  const lower = text.toLowerCase();
+  const kw = (keyword||'').toLowerCase().trim();
+  const kwCount = kw ? (lower.split(kw).length - 1) : 0;
+  const density = kw && wordCount ? (kwCount / wordCount * 100) : 0;
+  const hasH1 = /<h1[\s>]/i.test(text) || /^#\s+/m.test(text);
+  const hasH2 = /<h2[\s>]/i.test(text) || /^##\s+/m.test(text);
+  const questionLines = (text.match(/\?\s*$/gm)||[]).length;
+  const sentences = text.split(/[.!?]+/).filter(s=>s.trim().length>0);
+  const avgWordsPerSentence = sentences.length ? wordCount/sentences.length : 0;
+
+  const checks = [];
+  checks.push({label:'Word count', pass: wordCount>=rules.minWords && wordCount<=rules.maxWords*1.3,
+    note:`${wordCount} words (target ${rules.minWords}–${rules.maxWords} for a ${pageType} page)`});
+  checks.push({label:'Target keyword present', pass: kwCount>0, note: kw? `"${keyword}" appears ${kwCount}x` : 'No target keyword set'});
+  checks.push({label:'Keyword density healthy (0.5–2.5%)', pass: density>=0.3 && density<=2.5, note: density.toFixed(2)+'%'});
+  checks.push({label:'Has H1', pass: rules.needsH1 ? hasH1 : true, note: hasH1 ? 'Found' : 'Missing'});
+  checks.push({label:'Has subheadings (H2)', pass: hasH2, note: hasH2 ? 'Found' : 'Add H2 sections to break up content'});
+  if(rules.needsFAQ){
+    checks.push({label:'Question-style headers (FAQ)', pass: questionLines>=2, note: `${questionLines} question-style lines found`});
+    checks.push({label:'FAQPage schema reminder', pass:false, note:'Heuristic only — remember to add FAQPage JSON-LD structured data to this page.'});
+  }
+  checks.push({label:'Sentence readability', pass: avgWordsPerSentence<=22, note:`Avg ${avgWordsPerSentence.toFixed(1)} words/sentence (aim ≤ 22)`});
+  checks.push({label:'Internal/external links mentioned', pass: /href=|\[.*\]\(/i.test(text), note: /href=|\[.*\]\(/i.test(text) ? 'Links detected' : 'No links detected — add internal links to related pages'});
+  checks.push({label:'Image alt text present', pass: /alt=/i.test(text), note: /alt=/i.test(text) ? 'Found' : 'No <img alt=""> found — add descriptive alt text if this page has images'});
+
+  const score = Math.round(100 * checks.filter(c=>c.pass).length / checks.length);
+  return { score, checks, wordCount, density };
+}
+
+function renderContent(){
+  if(!currentProject()){ renderMain(); return; }
+  const tab = state.currentTab;
+  if(tab==='dashboard') return renderDashboard();
+  if(tab==='keywords') return renderKeywords();
+  if(tab==='backlinks') return renderBacklinks();
+  if(tab==='competitors') return renderCompetitors();
+  if(tab==='content') return renderContentAuditTab();
+  if(tab==='llm') return renderLLMTab();
+}
+
+function renderContentAuditTab(){
+  document.getElementById('content').innerHTML = `
+    <div class="notice">Scoring runs entirely in your browser using an on-page SEO rubric tuned per page type. It does not fetch "live SEO trend" data — treat it as a fast structural check, not a full audit.</div>
+    <div class="panel">
+      <h2>New content audit</h2>
+      <div class="row">
+        <select id="ca-type">
+          <option value="home">Home page</option>
+          <option value="service">Service page</option>
+          <option value="blog">Blog / article</option>
+          <option value="faq">FAQ page</option>
+        </select>
+        <input type="text" id="ca-keyword" placeholder="Target keyword">
+        <input type="text" id="ca-label" placeholder="Page name / URL">
+      </div>
+      <div class="field" style="margin-top:8px;">
+        <label>Paste page content (plain text or HTML)</label>
+        <textarea id="ca-text" placeholder="Paste the page copy here…"></textarea>
+      </div>
+      <button class="btn" onclick="runContentAudit()">Run audit</button>
+      <div id="ca-result" style="margin-top:14px;"></div>
+    </div>
+    <div class="panel">
+      <h2>Past audits</h2>
+      <table><tr><th>Date</th><th>Page</th><th>Type</th><th>Score</th></tr>
+      ${state.contentAudits.map(a=>`<tr><td>${a.date}</td><td>${escapeHtml(a.label||'')}</td><td>${a.pageType}</td><td>${a.score}/100</td></tr>`).join('') || '<tr><td colspan="4" class="small">No audits yet.</td></tr>'}
+      </table>
+    </div>
+  `;
+}
+
+async function runContentAudit(){
+  const pageType = document.getElementById('ca-type').value;
+  const keyword = document.getElementById('ca-keyword').value.trim();
+  const label = document.getElementById('ca-label').value.trim();
+  const text = document.getElementById('ca-text').value;
+  if(!text.trim()) return alert('Paste some content first');
+  const result = auditContent(text, pageType, keyword);
+  document.getElementById('ca-result').innerHTML = `
+    <div class="stat-card" style="max-width:200px;"><div class="label">Score</div><div class="value">${result.score}/100</div></div>
+    <table style="margin-top:10px;">
+      <tr><th>Check</th><th>Status</th><th>Detail</th></tr>
+      ${result.checks.map(c=>`<tr><td>${c.label}</td><td><span class="tag ${c.pass?'good':'warn'}">${c.pass?'Pass':'Fix'}</span></td><td>${escapeHtml(c.note)}</td></tr>`).join('')}
+    </table>`;
+  await subRef(state.currentProjectId,'contentAudits').add({
+    date: todayStr(), pageType, keyword, label, score: result.score, checks: result.checks
+  });
+}
+
+// ---------- LLM visibility tracking ----------
+async function callAnthropic(prompt){
+  const res = await fetch('https://api.anthropic.com/v1/messages', {
+    method:'POST',
+    headers:{
+      'Content-Type':'application/json',
+      'x-api-key': settings.anthropicKey,
+      'anthropic-version':'2023-06-01',
+      'anthropic-dangerous-direct-browser-access':'true'
+    },
+    body: JSON.stringify({ model:'claude-sonnet-4-6', max_tokens:800, messages:[{role:'user', content:prompt}] })
+  });
+  if(!res.ok) throw new Error('Anthropic API error ' + res.status + ' — this may be a CORS restriction; consider a small proxy.');
+  const json = await res.json();
+  return (json.content||[]).map(b=>b.text||'').join('\n');
+}
+async function callOpenAI(prompt){
+  const res = await fetch('https://api.openai.com/v1/chat/completions', {
+    method:'POST',
+    headers:{ 'Content-Type':'application/json', 'Authorization':'Bearer '+settings.openaiKey },
+    body: JSON.stringify({ model:'gpt-4o', messages:[{role:'user', content:prompt}] })
+  });
+  if(!res.ok) throw new Error('OpenAI API error ' + res.status);
+  const json = await res.json();
+  return json.choices?.[0]?.message?.content || '';
+}
+async function callPerplexity(prompt){
+  const res = await fetch('https://api.perplexity.ai/chat/completions', {
+    method:'POST',
+    headers:{ 'Content-Type':'application/json', 'Authorization':'Bearer '+settings.perplexityKey },
+    body: JSON.stringify({ model:'sonar', messages:[{role:'user', content:prompt}] })
+  });
+  if(!res.ok) throw new Error('Perplexity API error ' + res.status);
+  const json = await res.json();
+  return json.choices?.[0]?.message?.content || '';
+}
+
+function renderLLMTab(){
+  document.getElementById('content').innerHTML = `
+    <div class="notice">There is no public "ranking" API for LLM answers — this logs the real response from each model for your exact prompt and flags whether your brand/domain is mentioned, so you can track visibility over time. Calls run directly from your browser using the keys in Settings; some providers may block this via CORS, in which case route through a small server proxy.</div>
+    <div class="panel">
+      <h2>Run a visibility check</h2>
+      <div class="field"><label>Prompt (what a customer might ask)</label><textarea id="llm-prompt" placeholder="e.g. Who is the best plumber in Austin for emergency repairs?"></textarea></div>
+      <div class="field"><label>Your brand / domain to check for</label><input type="text" id="llm-brand" placeholder="e.g. Acme Plumbing"></div>
+      <div class="row">
+        <label><input type="checkbox" id="llm-claude" checked> Claude</label>
+        <label><input type="checkbox" id="llm-openai" checked> ChatGPT</label>
+        <label><input type="checkbox" id="llm-pplx" checked> Perplexity</label>
+        <button class="btn" onclick="runLLMCheck()">Run check</button>
+      </div>
+      <div id="llm-run-result"></div>
+    </div>
+    <div class="panel">
+      <h2>History</h2>
+      <table><tr><th>Date</th><th>Engine</th><th>Prompt</th><th>Mentioned?</th></tr>
+      ${state.llmLogs.map(l=>`<tr><td>${l.date}</td><td>${l.engine}</td><td>${escapeHtml((l.prompt||'').slice(0,60))}${(l.prompt||'').length>60?'…':''}</td><td><span class="tag ${l.mentioned?'good':'bad'}">${l.mentioned?'Yes':'No'}</span></td></tr>`).join('') || '<tr><td colspan="4" class="small">No checks logged yet.</td></tr>'}
+      </table>
+    </div>
+  `;
+}
+
+async function runLLMCheck(){
+  const prompt = document.getElementById('llm-prompt').value.trim();
+  const brand = document.getElementById('llm-brand').value.trim();
+  if(!prompt || !brand) return alert('Enter both a prompt and your brand name');
+  const engines = [];
+  if(document.getElementById('llm-claude').checked) engines.push(['Claude', callAnthropic]);
+  if(document.getElementById('llm-openai').checked) engines.push(['ChatGPT', callOpenAI]);
+  if(document.getElementById('llm-pplx').checked) engines.push(['Perplexity', callPerplexity]);
+  document.getElementById('llm-run-result').innerHTML = '<div class="small">Running…</div>';
+  let out = '';
+  for(const [name, fn] of engines){
+    try{
+      const text = await fn(prompt);
+      const mentioned = text.toLowerCase().includes(brand.toLowerCase());
+      out += `<div class="panel"><h3>${name} ${mentioned?'<span class="tag good">Mentioned</span>':'<span class="tag bad">Not mentioned</span>'}</h3><div class="small" style="white-space:pre-wrap;">${escapeHtml(text.slice(0,600))}${text.length>600?'…':''}</div></div>`;
+      await subRef(state.currentProjectId,'llmLogs').add({
+        date: todayStr(), engine:name, prompt, brand, mentioned, response:text
+      });
+    }catch(e){
+      out += `<div class="notice">${name}: ${e.message}</div>`;
+    }
+  }
+  document.getElementById('llm-run-result').innerHTML = out;
+}
+
+// ---------- Daily automated-style check (button; pair with GitHub Actions for true automation) ----------
+async function runTodaysChecks(){
+  const p = currentProject();
+  if(!p) return;
+  const btn = document.getElementById('run-checks-btn');
+  btn.disabled = true; btn.textContent = 'Running…';
+  try{
+    for(const kw of state.keywords){
+      await checkOneKeywordSilent(kw);
+    }
+    const bl = await dfsBacklinkSummary(p.domain).catch(()=>null);
+    const date = todayStr();
+    const positions = state.keywords.map(k=>(k.history&&k.history[date]&&k.history[date].position)).filter(v=>v!=null);
+    const avgPosition = positions.length ? Math.round(positions.reduce((a,b)=>a+b,0)/positions.length) : null;
+    await subRef(state.currentProjectId,'snapshots').doc(date).set({
+      date, avgPosition,
+      backlinkCount: bl ? bl.backlinks : null,
+      referringDomains: bl ? bl.referring_domains : null
+    }, {merge:true});
+    alert('Checks complete for ' + date);
+  }catch(e){ alert('Error running checks: ' + e.message); }
+  btn.disabled = false; btn.textContent = "▶ Run today's checks";
+}
+async function checkOneKeywordSilent(kw){
+  try{
+    const p = currentProject();
+    const result = await dfsLiveSerp(kw.keyword, kw.locationName, 'en');
+    const found = findDomainRank(result, p.domain);
+    const date = todayStr();
+    const history = kw.history || {};
+    history[date] = { position: found ? found.position : null, url: found ? found.url : null };
+    await subRef(state.currentProjectId,'keywords').doc(kw.id).update({ history, lastPosition: found?found.position:null, lastChecked: date });
+  }catch(e){ console.error('keyword check failed', kw.keyword, e); }
+}
+
+// =========================================================================
+// SETTINGS MODAL
+// =========================================================================
+function openSettingsModal(){
+  const s = settings;
+  const bg = document.createElement('div');
+  bg.className='modal-bg';
+  bg.innerHTML = `
+    <div class="modal">
+      <button class="modal-close" onclick="this.closest('.modal-bg').remove()">✕</button>
+      <h2>Settings</h2>
+      <div class="notice">Stored only in this browser's localStorage — never written into the HTML file itself.</div>
+      <h3>Firebase config (paste the config object from your Firebase console)</h3>
+      <textarea id="set-firebase" placeholder='{"apiKey":"...","authDomain":"...","projectId":"...", ...}'>${s.firebaseConfig?JSON.stringify(s.firebaseConfig):''}</textarea>
+      <h3>DataForSEO</h3>
+      <div class="field"><label>Login</label><input type="text" id="set-dfs-login" value="${s.dfsLogin||''}"></div>
+      <div class="field"><label>Password</label><input type="password" id="set-dfs-pass" value="${s.dfsPassword||''}"></div>
+      <h3>LLM API keys (optional — for LLM Visibility tab)</h3>
+      <div class="field"><label>Anthropic API key</label><input type="password" id="set-anthropic" value="${s.anthropicKey||''}"></div>
+      <div class="field"><label>OpenAI API key</label><input type="password" id="set-openai" value="${s.openaiKey||''}"></div>
+      <div class="field"><label>Perplexity API key</label><input type="password" id="set-pplx" value="${s.perplexityKey||''}"></div>
+      <button class="btn" onclick="saveSettingsModal()">Save settings</button>
+    </div>`;
+  document.body.appendChild(bg);
+}
+function saveSettingsModal(){
+  let fbConfig = null;
+  try{ fbConfig = JSON.parse(document.getElementById('set-firebase').value); }catch(e){ alert('Firebase config is not valid JSON'); return; }
+  settings = {
+    firebaseConfig: fbConfig,
+    dfsLogin: document.getElementById('set-dfs-login').value.trim(),
+    dfsPassword: document.getElementById('set-dfs-pass').value.trim(),
+    anthropicKey: document.getElementById('set-anthropic').value.trim(),
+    openaiKey: document.getElementById('set-openai').value.trim(),
+    perplexityKey: document.getElementById('set-pplx').value.trim(),
+  };
+  saveSettings(settings);
+  document.querySelector('.modal-bg').remove();
+  location.reload();
+}
+
+function openAddProjectModal(){
+  const bg = document.createElement('div');
+  bg.className='modal-bg';
+  bg.innerHTML = `
+    <div class="modal">
+      <button class="modal-close" onclick="this.closest('.modal-bg').remove()">✕</button>
+      <h2>New client project</h2>
+      <div class="field"><label>Client name</label><input type="text" id="new-p-name"></div>
+      <div class="field"><label>Domain (no https://)</label><input type="text" id="new-p-domain" placeholder="example.com"></div>
+      <div class="field"><label>Industry</label><input type="text" id="new-p-industry" placeholder="e.g. Home services / Legal / SaaS"></div>
+      <button class="btn" onclick="submitNewProject()">Create project</button>
+    </div>`;
+  document.body.appendChild(bg);
+}
+async function submitNewProject(){
+  const name = document.getElementById('new-p-name').value.trim();
+  const domain = document.getElementById('new-p-domain').value.trim();
+  const industry = document.getElementById('new-p-industry').value.trim();
+  if(!name || !domain) return alert('Name and domain are required');
+  const ref = await createProject(name, domain, industry);
+  document.querySelector('.modal-bg').remove();
+  selectProject(ref.id);
+}
+
+// ---------- utils ----------
+function escapeHtml(str){ return (str||'').replace(/[&<>"']/g, m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m])); }
+function escapeAttr(str){ return escapeHtml(str).replace(/"/g,'&quot;'); }
+
+// =========================================================================
+// BOOTSTRAP
+// =========================================================================
+document.getElementById('add-project-btn').addEventListener('click', openAddProjectModal);
+document.getElementById('settings-btn').addEventListener('click', openSettingsModal);
+document.getElementById('project-search').addEventListener('input', renderSidebar);
+document.getElementById('run-checks-btn').addEventListener('click', runTodaysChecks);
+document.querySelectorAll('.tab-btn').forEach(b=>b.addEventListener('click', ()=>setTab(b.dataset.tab)));
+
+if(initFirebase()){
+  listenProjects();
+} else {
+  document.getElementById('content').innerHTML = `
+    <div class="empty-state">
+      <div style="font-size:34px;">🔧</div>
+      <div style="font-weight:700;font-size:16px;color:var(--text);">Connect Firebase to get started</div>
+      <div class="small">Click "⚙ API &amp; Firebase Settings" in the sidebar and paste your Firebase config + DataForSEO credentials.</div>
+    </div>`;
+}
+</script>
+</body>
+</html>
