@@ -730,7 +730,7 @@ function renderCompetitors(){
   `;
 }
 function addCompetitor(){
-  const domain = document.getElementById('comp-domain').value.trim();
+  const domain = cleanDomain(document.getElementById('comp-domain').value);
   const name = document.getElementById('comp-name').value.trim();
   if(!domain) return;
   subRef(state.currentProjectId,'competitors').add({domain, name});
@@ -1016,6 +1016,11 @@ function saveSettingsModal(){
 }
 
 function openAddProjectModal(){
+  if(!db){
+    alert("Firebase isn't connected yet. Open ⚙ Settings, paste your Firebase config, and save first.");
+    openSettingsModal();
+    return;
+  }
   const bg = document.createElement('div');
   bg.className='modal-bg';
   bg.innerHTML = `
@@ -1029,14 +1034,25 @@ function openAddProjectModal(){
     </div>`;
   document.body.appendChild(bg);
 }
+function cleanDomain(str){
+  return (str||'').trim().replace(/^https?:\/\//i,'').replace(/^www\./i,'').replace(/\/.*$/,'');
+}
 async function submitNewProject(){
   const name = document.getElementById('new-p-name').value.trim();
-  const domain = document.getElementById('new-p-domain').value.trim();
+  const domain = cleanDomain(document.getElementById('new-p-domain').value);
   const industry = document.getElementById('new-p-industry').value.trim();
   if(!name || !domain) return alert('Name and domain are required');
-  const ref = await createProject(name, domain, industry);
-  document.querySelector('.modal-bg').remove();
-  selectProject(ref.id);
+  if(!db){
+    alert("Firebase isn't connected — open ⚙ Settings and save your Firebase config first.");
+    return;
+  }
+  try{
+    const ref = await createProject(name, domain, industry);
+    document.querySelector('.modal-bg').remove();
+    selectProject(ref.id);
+  }catch(e){
+    alert('Could not create the project: ' + e.message + '\n\nThis usually means your Firestore security rules are blocking writes, or the database hasn\'t been created yet.');
+  }
 }
 
 // ---------- utils ----------
