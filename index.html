@@ -345,8 +345,6 @@ function saveLocal(state){ try { localStorage.setItem(LS_KEY, JSON.stringify(sta
 // ---------- Global state ----------
 let STATE = loadLocal() || {
   proxyEndpoint: "",
-  dataforseoLogin: "",
-  dataforseoPassword: "",
   projects: [],       // {id,name,domain,industry,createdAt}
   activeProjectId: null,
   data: {}            // per-project: keywords, suggestions, backlinks, competitors, contentAudits, llmPrompts, snapshots
@@ -1042,12 +1040,10 @@ document.getElementById("view-date").addEventListener("change", () => { if (ACTI
 function renderSettings(){
   return `
     <div class="notice">
-      DataForSEO and LLM provider APIs must be called from a server, not this page, or your credentials would be visible to anyone viewing source on GitHub Pages. Deploy a small serverless function (Cloudflare Worker, Firebase Cloud Function, or Vercel Edge Function all work) that holds your <code>DataForSEO login/password</code> and any LLM API keys, and forwards requests here. Paste that function's URL below. I can write that proxy function for you next if you'd like — just ask.
+      DataForSEO and any LLM provider APIs must be called from a server, not this page — otherwise your credentials would be visible to anyone viewing source on GitHub Pages. Your DataForSEO login/password and any LLM API keys live only as encrypted secrets on your deployed proxy (a Cloudflare Worker) — never in this file, never in your browser. This page only needs to know where that proxy lives.
     </div>
     <div class="form-row" style="flex-direction:column;align-items:flex-start;max-width:520px;">
-      <div class="field-wrap" style="width:100%;"><span class="field-label">Serverless proxy endpoint URL</span><input id="set-proxy" style="width:100%;" value="${esc(STATE.proxyEndpoint)}" placeholder="https://your-worker.example.workers.dev"></div>
-      <div class="field-wrap" style="width:100%;"><span class="field-label">DataForSEO login (stored locally only, sent to your own proxy)</span><input id="set-login" style="width:100%;" value="${esc(STATE.dataforseoLogin)}"></div>
-      <div class="field-wrap" style="width:100%;"><span class="field-label">DataForSEO password</span><input id="set-pass" type="password" style="width:100%;" value="${esc(STATE.dataforseoPassword)}"></div>
+      <div class="field-wrap" style="width:100%;"><span class="field-label">Serverless proxy endpoint URL</span><input id="set-proxy" style="width:100%;" value="${esc(STATE.proxyEndpoint)}" placeholder="https://edge-seo-proxy.your-subdomain.workers.dev"></div>
       <button class="btn btn-primary" style="margin-top:10px;" onclick="saveSettings()">Save settings</button>
     </div>
 
@@ -1060,18 +1056,17 @@ function renderSettings(){
 }
 function saveSettings(){
   STATE.proxyEndpoint = document.getElementById("set-proxy").value.trim();
-  STATE.dataforseoLogin = document.getElementById("set-login").value.trim();
-  STATE.dataforseoPassword = document.getElementById("set-pass").value;
   persist();
   alert("Settings saved.");
 }
+
 
 // ---------- Proxy caller ----------
 async function callProxy(action, payload){
   const res = await fetch(STATE.proxyEndpoint, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ action, payload, credentials: { login: STATE.dataforseoLogin, password: STATE.dataforseoPassword } })
+    body: JSON.stringify({ action, payload })
   });
   if (!res.ok) throw new Error("Proxy call failed: " + res.status);
   return res.json();
