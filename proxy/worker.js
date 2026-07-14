@@ -96,6 +96,44 @@ async function serpRank(env, payload) {
   return { position, volume };
 }
 
+// Full live SERP snapshot — the actual ranked results for a keyword + exact
+// location, for browsing rather than just tracking one domain's position.
+async function liveSerp(env, payload) {
+  const { keyword, location, city, device } = payload;
+  const location_name = city ? `${city},${location}` : (location || "United States");
+
+  const serp = await dataforseoPost(env, "/serp/google/organic/live/advanced", [
+    {
+      keyword,
+      location_name,
+      language_code: "en",
+      device: (device || "Desktop").toLowerCase(),
+      depth: 20,
+    },
+  ]);
+
+  const result = serp?.tasks?.[0]?.result?.[0] || {};
+  const items = (result.items || [])
+    .filter((it) => it.type === "organic" || it.type === "featured_snippet" || it.type === "local_pack")
+    .slice(0, 20)
+    .map((it) => ({
+      rank: it.rank_absolute ?? null,
+      type: it.type,
+      title: it.title || it.domain || "(untitled)",
+      url: it.url || null,
+      domain: it.domain || null,
+      description: it.description || it.snippet || null,
+    }));
+
+  return {
+    keyword,
+    location_name,
+    checkedAt: result.datetime || new Date().toISOString(),
+    resultCount: result.se_results_count ?? null,
+    items,
+  };
+}
+
 // Keyword ideas relevant to the client's industry, with live trend/volume.
 async function keywordIdeas(env, payload) {
   const { seed, location } = payload;
@@ -259,6 +297,7 @@ async function contentDeepReview(env, payload) {
 // ---------------------------------------------------------------------
 const ACTIONS = {
   serp_rank: serpRank,
+  live_serp: liveSerp,
   keyword_ideas: keywordIdeas,
   backlink_opportunities: backlinkOpportunities,
   competitor_snapshot: competitorSnapshot,
