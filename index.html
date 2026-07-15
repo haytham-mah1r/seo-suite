@@ -200,6 +200,14 @@ pre.schema-out .id{color:var(--blue);}
 @media (prefers-reduced-motion:reduce){.sgedge.on{animation:none;}}
 .sgcount{fill:var(--orange-dim)!important;font-size:9.5px!important;}
 
+/* ---------- GBP Performance map ---------- */
+#gbpMap{width:100%;height:480px;border-radius:var(--radius);border:1px solid var(--line);}
+.gbp-legend{display:flex;gap:16px;flex-wrap:wrap;align-items:center;font-size:12.5px;color:var(--text-dim);margin:10px 0;}
+.gbp-legend .dot{display:inline-block;width:12px;height:12px;border-radius:50%;margin-right:6px;vertical-align:middle;}
+.gbp-kw-chip{display:inline-flex;align-items:center;gap:6px;background:var(--panel-2);border:1px solid var(--line);border-radius:100px;padding:4px 10px;font-size:12.5px;margin:2px;}
+.gbp-kw-chip button{background:none;border:none;color:var(--text-dim);cursor:pointer;font-size:13px;padding:0;}
+.gbp-kw-chip button:hover{color:var(--red);}
+
 /* ---------- Login screen ---------- */
 #login-screen{position:fixed;inset:0;background:var(--bg);display:flex;align-items:center;justify-content:center;z-index:1000;}
 
@@ -242,6 +250,8 @@ pre.schema-out .id{color:var(--blue);}
 .smooth-bar-track{height:8px;background:var(--line);border-radius:100px;overflow:hidden;width:100%;}
 .smooth-bar-fill{height:100%;border-radius:100px;background:linear-gradient(90deg,var(--orange-dim),var(--orange));transition:width .4s cubic-bezier(.4,0,.2,1);}
 </style>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 </head>
 <body>
 
@@ -449,10 +459,11 @@ function newSchemaData(){
 }
 function ensureProjectData(pid){
   if (!STATE.data[pid]) {
-    STATE.data[pid] = { keywords:[], suggestions:[], backlinks:[], competitors:[], contentAudits:[], llmPrompts:[], snapshots:{}, lastLiveSerp:null, schema:newSchemaData() };
+    STATE.data[pid] = { keywords:[], suggestions:[], backlinks:[], competitors:[], contentAudits:[], llmPrompts:[], snapshots:{}, lastLiveSerp:null, schema:newSchemaData(), gbp:newGbpData() };
   }
   if (STATE.data[pid].lastLiveSerp === undefined) STATE.data[pid].lastLiveSerp = null;
   if (!STATE.data[pid].schema) STATE.data[pid].schema = newSchemaData();
+  if (!STATE.data[pid].gbp) STATE.data[pid].gbp = newGbpData();
   return STATE.data[pid];
 }
 function activeData(){ return STATE.activeProjectId ? ensureProjectData(STATE.activeProjectId) : null; }
@@ -558,6 +569,7 @@ const TABS = [
   { id:"competitors", label:"Competitors" },
   { id:"content", label:"Content Grader" },
   { id:"schema", label:"Schema Markup" },
+  { id:"gbp", label:"GBP Performance" },
   { id:"llm", label:"LLM Visibility" },
   { id:"history", label:"History" },
   { id:"settings", label:"API & Settings" },
@@ -775,10 +787,10 @@ function renderContent(){
   const renderers = {
     overview: renderOverview, keywords: renderKeywords, serp: renderLiveSerp, suggestions: renderSuggestions,
     backlinks: renderBacklinks, competitors: renderCompetitors, content: renderContentGrader,
-    schema: renderSchemaTab, llm: renderLLM, history: renderHistory, settings: renderSettings
+    schema: renderSchemaTab, gbp: renderGbpTab, llm: renderLLM, history: renderHistory, settings: renderSettings
   };
   el.innerHTML = (renderers[ACTIVE_TAB] || renderOverview)();
-  const afterHooks = { schema: afterSchemaTab };
+  const afterHooks = { schema: afterSchemaTab, gbp: afterGbpTab };
   afterHooks[ACTIVE_TAB]?.();
 }
 
@@ -911,6 +923,31 @@ function renderKeywords(){
   `;
 }
 
+function normalizeDomain(d){
+  return String(d||"").replace(/^https?:\/\//,"").replace(/^www\./,"").replace(/\/.*$/,"").toLowerCase().trim();
+}
+function isOwnDomain(domainOrUrl){
+  const proj = currentProject();
+  if (!proj || !proj.domain) return false;
+  const mine = normalizeDomain(proj.domain);
+  const test = normalizeDomain(domainOrUrl);
+  return !!mine && !!test && (test === mine || test.endsWith("."+mine));
+}
+// Wraps any occurrence of the project's own domain/brand name in a highlighted
+// <mark> so it's instantly spottable inside longer blocks of text (LLM answers).
+function highlightOwnMentions(text){
+  const proj = currentProject();
+  if (!proj) return esc(text);
+  const escaped = esc(text);
+  const needles = [proj.domain ? normalizeDomain(proj.domain) : null, proj.name].filter(Boolean);
+  let result = escaped;
+  needles.forEach(needle => {
+    if (!needle) return;
+    const pattern = needle.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    result = result.replace(new RegExp(`(${pattern})`, "gi"), `<mark style="background:var(--orange-wash);color:var(--orange-dim);border-radius:3px;padding:0 2px;font-weight:700;">$1</mark>`);
+  });
+  return result;
+}
 function describeKeywordLocation(k){
   if (k.lat && k.lng) return `📍 ${k.lat}, ${k.lng} (±${k.radiusKm || 5}km)`;
   return k.location || "United States";
@@ -1006,12 +1043,15 @@ function renderLiveSerp(){
         <h2>Results for "${esc(r.keyword)}" · ${esc(r.location_name)}</h2>
         <span style="color:var(--text-dim);font-size:12px;">Checked ${esc(new Date(r.checkedAt).toLocaleString())}${r.resultCount ? ` · ~${r.resultCount.toLocaleString()} total results` : ''}</span>
       </div>
-      ${r.items.length ? r.items.map(it => `
-        <div class="card" style="margin-bottom:10px;display:flex;gap:14px;align-items:flex-start;">
-          <div class="mono" style="flex:none;width:34px;height:34px;border-radius:9px;background:var(--orange-wash);color:var(--orange-dim);display:flex;align-items:center;justify-content:center;font-weight:700;">${it.rank ?? '–'}</div>
+      ${r.items.length ? r.items.map(it => {
+        const mine = isOwnDomain(it.domain || it.url);
+        return `
+        <div class="card" style="margin-bottom:10px;display:flex;gap:14px;align-items:flex-start;${mine ? 'border:2px solid var(--orange);background:var(--orange-wash);' : ''}">
+          <div class="mono" style="flex:none;width:34px;height:34px;border-radius:9px;background:${mine?'var(--orange)':'var(--orange-wash)'};color:${mine?'#fff':'var(--orange-dim)'};display:flex;align-items:center;justify-content:center;font-weight:700;">${it.rank ?? '–'}</div>
           <div style="min-width:0;flex:1;">
             <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
               <b style="color:var(--charcoal);">${esc(it.title)}</b>
+              ${mine ? `<span class="pill" style="background:var(--orange);color:#fff;">★ Your site</span>` : ''}
               ${it.type && it.type !== 'organic' ? `<span class="pill opportunity">${esc(it.type.replace('_',' '))}</span>` : ''}
             </div>
             <div style="font-size:12px;color:var(--green);margin:2px 0;">${esc(it.domain || '')}</div>
@@ -1019,7 +1059,7 @@ function renderLiveSerp(){
             ${it.url ? `<a href="${esc(it.url)}" target="_blank" style="font-size:11.5px;">${esc(it.url)}</a>` : ''}
           </div>
         </div>
-      `).join("") : `<div class="card" style="color:var(--text-dim);">No organic results came back for this query/location.</div>`}
+      `;}).join("") : `<div class="card" style="color:var(--text-dim);">No organic results came back for this query/location.</div>`}
     ` : `<div class="card" style="color:var(--text-dim);">Run a query above to see the live results page.</div>`}
   `;
 }
@@ -1268,101 +1308,283 @@ async function refreshCompetitor(id){
 // =====================================================================
 // CONTENT GRADER (real client-side heuristic scoring — no API required)
 // =====================================================================
+let CG_MODE = "text"; // "text" | "source"
+function cgSetMode(m){ CG_MODE = m; renderContent(); }
+
 function renderContentGrader(){
   return `
-    <div class="notice">This scorer runs entirely in your browser using an on-page SEO heuristic (keyword usage, structure, readability, format fit) — no API call needed. You can later route this same text through your proxy to an LLM for a deeper qualitative pass; the button for that is included below.</div>
+    <div class="notice">Paste plain text, or switch to "Page source" and paste the full HTML (view-source) — source mode unlocks checks that plain text can't: title tag, meta description, image alt text, internal/external links, and existing structured data. Feedback is thorough by design: each category below explains exactly what's wrong and exactly what to change, not just a hint.</div>
+
+    <div class="subtabs">
+      <button class="subtab-btn ${CG_MODE==='text'?'active':''}" onclick="cgSetMode('text')">Plain text</button>
+      <button class="subtab-btn ${CG_MODE==='source'?'active':''}" onclick="cgSetMode('source')">Page source (HTML)</button>
+    </div>
+
     <div class="form-row">
-      <div class="field-wrap"><span class="field-label">Target keyword</span><input id="cg-keyword" placeholder="emergency plumber austin"></div>
+      <div class="field-wrap"><span class="field-label">Target keyword</span><input id="cg-keyword" placeholder="emergency plumber austin" oninput="cgScheduleLiveGrade()"></div>
       <div class="field-wrap"><span class="field-label">Page type</span>
-        <select id="cg-type"><option>Home page</option><option>Service page</option><option>FAQ</option><option>Blog / article</option><option>Landing page</option></select>
+        <select id="cg-type" onchange="cgScheduleLiveGrade()"><option>Home page</option><option>Service page</option><option>FAQ</option><option>Blog / article</option><option>Landing page</option></select>
       </div>
     </div>
-    <textarea id="cg-content" class="form-row" style="width:100%;min-height:220px;padding:12px;border:1px solid var(--line);border-radius:9px;background:var(--panel-2);" placeholder="Paste the page content here…"></textarea>
+    <textarea id="cg-content" class="form-row" style="width:100%;min-height:240px;padding:12px;border:1px solid var(--line);border-radius:9px;background:var(--panel-2);font-family:${CG_MODE==='source'?'var(--mono)':'inherit'};font-size:${CG_MODE==='source'?'12px':'14px'};" placeholder="${CG_MODE==='source' ? '<!DOCTYPE html>… paste the full view-source HTML' : 'Paste the page content here…'}" oninput="cgScheduleLiveGrade()"></textarea>
     <div class="form-row">
       <button class="btn btn-primary" onclick="runContentGrade()">Grade this content</button>
       <button class="btn" onclick="runDeepGrade()">Run deep LLM-based review (via proxy)</button>
+      <span id="cg-live-indicator" style="font-size:11.5px;color:var(--text-dim);align-self:center;"></span>
     </div>
     <div id="cg-results"></div>
     <div class="section-title"><h2>Past audits for this project</h2></div>
     <table>
-      <thead><tr><th>Date</th><th>Page type</th><th>Keyword</th><th>Score</th></tr></thead>
+      <thead><tr><th>Date</th><th>Page type</th><th>Keyword</th><th>Score</th><th></th></tr></thead>
       <tbody>
-        ${activeData().contentAudits.map(a=>`<tr><td class="mono">${esc(a.date)}</td><td>${esc(a.pageType)}</td><td>${esc(a.keyword)}</td><td class="mono">${a.score}/100</td></tr>`).join("") || `<tr><td colspan="4" style="color:var(--text-dim);">No audits saved yet.</td></tr>`}
+        ${activeData().contentAudits.map(a=>`<tr><td class="mono">${esc(a.date)}</td><td>${esc(a.pageType)}</td><td>${esc(a.keyword)}</td><td class="mono">${a.score}/100</td><td><button class="btn-ghost" onclick="deleteContentAudit('${a.id}')">Delete</button></td></tr>`).join("") || `<tr><td colspan="5" style="color:var(--text-dim);">No audits saved yet.</td></tr>`}
       </tbody>
     </table>
   `;
 }
+function deleteContentAudit(id){
+  if (!confirm("Delete this past assessment?")) return;
+  const d = activeData();
+  d.contentAudits = d.contentAudits.filter(a=>a.id!==id);
+  persist(); renderContent();
+}
 
-function gradeContent(text, keyword, pageType){
+// Extracts everything checkable from a full HTML document (source mode).
+function extractSourceMeta(html){
+  const doc = new DOMParser().parseFromString(html, "text/html");
+  const title = doc.querySelector("title")?.textContent?.trim() || "";
+  const metaDesc = doc.querySelector('meta[name="description"]')?.getAttribute("content") || "";
+  const h1s = [...doc.querySelectorAll("h1")].map(h=>h.textContent.trim());
+  const h2Count = doc.querySelectorAll("h2").length;
+  const h3Count = doc.querySelectorAll("h3").length;
+  const imgs = [...doc.querySelectorAll("img")];
+  const imgMissingAlt = imgs.filter(im => !im.getAttribute("alt") || !im.getAttribute("alt").trim()).length;
+  const links = [...doc.querySelectorAll("a[href]")];
+  let internalLinks = 0, externalLinks = 0;
+  const domain = normalizeDomain(currentProject()?.domain || "");
+  links.forEach(a => {
+    const href = a.getAttribute("href") || "";
+    if (/^https?:\/\//.test(href)) {
+      if (domain && normalizeDomain(href) === domain) internalLinks++; else externalLinks++;
+    } else if (href.startsWith("/") || href.startsWith("#") || !href.includes("://")) {
+      internalLinks++;
+    }
+  });
+  const hasSchema = doc.querySelectorAll('script[type="application/ld+json"]').length > 0;
+  const bodyText = (doc.body?.textContent || "").replace(/\s+/g, " ").trim();
+  return { title, metaDesc, h1s, h2Count, h3Count, imgTotal: imgs.length, imgMissingAlt, internalLinks, externalLinks, hasSchema, bodyText };
+}
+
+// ---------------------------------------------------------------------
+// DEEP GRADING ENGINE — every category returns points-earned/points-possible
+// plus detailed, specific prose feedback (not just a one-line hint).
+// ---------------------------------------------------------------------
+function gradeContentDeep(rawInput, keyword, pageType, mode){
+  const meta = mode === "source" ? extractSourceMeta(rawInput) : null;
+  const text = meta ? meta.bodyText : rawInput;
   const words = (text.match(/[A-Za-z0-9'-]+/g) || []);
   const wordCount = words.length;
   const lower = text.toLowerCase();
-  const kw = keyword.toLowerCase().trim();
+  const kw = (keyword||"").toLowerCase().trim();
   const kwOccurrences = kw ? (lower.split(kw).length - 1) : 0;
   const density = wordCount ? (kwOccurrences / wordCount * 100) : 0;
-  const headings = (text.match(/^#{1,3}\s|<h[1-3][ >]/gim) || []).length;
-  const questions = (text.match(/\?/g) || []).length;
   const sentences = (text.match(/[.!?]+/g) || []).length || 1;
   const avgWordsPerSentence = wordCount / sentences;
+  const longSentences = (text.match(/[^.!?]{220,}[.!?]/g) || []).length;
+  const questions = (text.match(/\?/g) || []).length;
   const hasIntroKw = kw && lower.slice(0, Math.min(300, lower.length)).includes(kw);
+  const headingsPlain = (text.match(/^#{1,3}\s|<h[1-3][ >]/gim) || []).length;
 
-  let score = 0; const notes = [];
+  const categories = [];
 
-  // Length appropriateness by page type
+  // --- Content depth & length ---
   const targets = { "Home page":[300,900], "Service page":[600,1500], "FAQ":[250,1200], "Blog / article":[900,2500], "Landing page":[400,1000] };
   const [lo,hi] = targets[pageType] || [300,1200];
-  if (wordCount>=lo && wordCount<=hi) { score+=20; } else if (wordCount>0){ score+=10; notes.push(`Word count (${wordCount}) is outside the typical ${lo}-${hi} range for a ${pageType.toLowerCase()}.`); } else { notes.push("No content detected."); }
+  let depthPts = 0; const depthNotes = [];
+  if (wordCount === 0){ depthNotes.push("No readable content was found — nothing to grade yet."); }
+  else if (wordCount >= lo && wordCount <= hi) { depthPts = 20; depthNotes.push(`Word count (${wordCount}) sits comfortably in the ${lo}-${hi} range typical for a well-performing ${pageType.toLowerCase()}. This is enough depth for search engines to judge topical coverage without padding.`); }
+  else if (wordCount < lo) { depthPts = 8; depthNotes.push(`At ${wordCount} words, this is thinner than the ${lo}-${hi} range a ${pageType.toLowerCase()} typically needs to fully answer the searcher's question and rank against more thorough competitors. Add genuinely new information — specifics about process, materials, timelines, pricing logic, or FAQs — rather than repeating the same point in different words.`); }
+  else { depthPts = 12; depthNotes.push(`At ${wordCount} words, this runs longer than the ${lo}-${hi} range typical for this page type. Length itself isn't a penalty, but check whether every section still earns its place — look for repeated points, throat-clearing intros, or tangents that could be trimmed or split into a separate page.`); }
+  categories.push({ label:"Content depth & length", points:depthPts, max:20, notes:depthNotes });
 
-  // Keyword density (sweet spot ~0.5–2%)
-  if (density>=0.4 && density<=2.2) { score+=20; } else if (density>0){ score+=8; notes.push(density>2.2 ? "Keyword density is high enough to risk reading as stuffed — vary phrasing with related terms." : "Keyword density is thin — work the target phrase and natural variants in a few more times."); } else { notes.push("Target keyword doesn't appear in the content at all."); }
+  // --- Keyword usage & placement ---
+  let kwPts = 0; const kwNotes = [];
+  if (!kw) { kwNotes.push("No target keyword was entered, so keyword placement and density can't be evaluated — add one to get this feedback."); }
+  else if (kwOccurrences === 0) { kwNotes.push(`The exact phrase "${keyword}" does not appear anywhere in this content. Even one or two natural mentions materially help topical relevance — work it into a heading or the opening paragraph rather than only using synonyms.`); }
+  else {
+    if (density >= 0.4 && density <= 2.2) { kwPts += 12; kwNotes.push(`Keyword density (${density.toFixed(2)}%) is in a healthy, natural range — ${kwOccurrences} mention${kwOccurrences===1?'':'s'} across ${wordCount} words reads as genuine topical focus rather than stuffing.`); }
+    else if (density > 2.2) { kwPts += 5; kwNotes.push(`Keyword density (${density.toFixed(2)}%) is high enough that it risks reading as stuffed to both readers and Google's spam systems. Swap some repetitions for natural variants and related terms (e.g. synonyms, the plural/singular form, or a related service name) instead of the exact phrase every time.`); }
+    else { kwPts += 6; kwNotes.push(`Keyword density (${density.toFixed(2)}%) is thin — the phrase appears, but not often enough to clearly signal what this page is about. Work the exact phrase and close variants into 2-4 more spots: a subheading, the first paragraph, and one supporting sentence later in the page.`); }
+    if (hasIntroKw) { kwPts += 8; kwNotes.push("The target keyword appears within the first ~300 characters, which is exactly where both readers and search engines weight relevance most heavily."); }
+    else { kwNotes.push("The target keyword is missing from the opening ~300 characters. Rewrite the first sentence or two so the exact phrase (or a very close variant) appears early — this is one of the highest-leverage single changes you can make."); }
+  }
+  categories.push({ label:"Keyword usage & placement", points:kwPts, max:20, notes:kwNotes });
 
-  // Keyword near the top
-  if (hasIntroKw) { score+=15; } else { notes.push("Target keyword isn't present in the opening ~300 characters — search engines and readers weight the intro heavily."); }
-
-  // Structure
-  if (pageType==="FAQ") {
-    if (questions>=3) { score+=20; } else { score+=5; notes.push("An FAQ page should read as a real set of distinct questions — aim for several clear Q&A pairs, each a candidate for a rich snippet."); }
+  // --- Heading structure ---
+  let headPts = 0; const headNotes = [];
+  if (meta) {
+    if (pageType === "FAQ") {
+      if (questions >= 3) { headPts = 15; headNotes.push(`${questions} question marks found — this reads as a genuine FAQ with multiple distinct Q&A pairs, which is exactly the structure Google looks for when awarding FAQ rich snippets.`); }
+      else { headPts = 5; headNotes.push("An FAQ page should contain several distinct questions, each answered directly below it. Right now there aren't enough question-formatted headings to read as a real FAQ — add more Q&A pairs, each a candidate for its own rich snippet."); }
+    } else {
+      if (meta.h1s.length === 1) { headPts += 6; headNotes.push(`Exactly one H1 found ("${meta.h1s[0]}") — correct. A single, clear H1 is what both users and search engines expect as the page's main heading.`); }
+      else if (meta.h1s.length === 0) { headPts += 0; headNotes.push("No H1 tag was found on this page. Every page should have exactly one H1 that clearly states what the page is about and ideally includes the target keyword or a close variant."); }
+      else { headPts += 2; headNotes.push(`${meta.h1s.length} H1 tags were found. Having more than one H1 dilutes the page's primary topical signal and can confuse both users skimming the page and search engines parsing its structure — consolidate down to a single H1 and demote the others to H2.`); }
+      if (meta.h2Count >= 2) { headPts += 9; headNotes.push(`${meta.h2Count} H2 subheadings break the content into scannable sections, which helps both readability and Google's ability to identify distinct subtopics it can surface as sitelinks or featured snippets.`); }
+      else { headPts += 3; headNotes.push(`Only ${meta.h2Count} H2 subheading${meta.h2Count===1?'':'s'} found. Add more section headings — aim for one every 150-300 words of content — so the page reads as organized sections rather than one long block.`); }
+    }
   } else {
-    if (headings>=2) { score+=20; } else { score+=5; notes.push("Add more subheadings (H2/H3) to break up the content — this helps both skimmability and topical signals."); }
+    if (pageType === "FAQ") {
+      if (questions >= 3) { headPts = 15; headNotes.push(`${questions} question marks found, consistent with a real multi-question FAQ format.`); }
+      else { headPts = 5; headNotes.push("Not enough distinct questions detected for a strong FAQ page — aim for several clear Q&A pairs."); }
+    } else if (headingsPlain >= 2) { headPts = 15; headNotes.push(`${headingsPlain} heading markers detected in the pasted text — good sectioning.`); }
+    else { headPts = 5; headNotes.push("Few or no heading markers detected in the pasted text. Paste the full page source instead of plain text to get an exact H1/H2 count and placement check."); }
+  }
+  categories.push({ label:"Heading structure", points:headPts, max:15, notes:headNotes });
+
+  // --- Readability ---
+  let readPts = 0; const readNotes = [];
+  if (wordCount === 0) { readNotes.push("No content to assess readability on yet."); }
+  else if (avgWordsPerSentence <= 20 && longSentences === 0) { readPts = 15; readNotes.push(`Average sentence length is ${avgWordsPerSentence.toFixed(1)} words with no run-on sentences detected — this reads at an accessible pace for most readers, which correlates with lower bounce rates.`); }
+  else {
+    readPts = avgWordsPerSentence <= 26 ? 9 : 4;
+    readNotes.push(`Average sentence length is ${avgWordsPerSentence.toFixed(1)} words${longSentences ? `, and ${longSentences} sentence${longSentences===1?'':'s'} run well past 200 characters` : ''}. Break long sentences at natural conjunctions ("and," "but," "which") into two shorter ones — this is one of the fastest ways to raise a Flesch readability score without cutting content.`);
+  }
+  categories.push({ label:"Readability", points:readPts, max:15, notes:readNotes });
+
+  // --- Title tag & meta description (source mode only) ---
+  if (meta) {
+    let titlePts = 0; const titleNotes = [];
+    if (!meta.title) { titleNotes.push("No <title> tag found. This is the single most important on-page SEO element — write one under 60 characters that includes the target keyword near the front."); }
+    else {
+      const titleLen = meta.title.length;
+      const titleHasKw = kw && meta.title.toLowerCase().includes(kw);
+      if (titleLen <= 60 && titleHasKw) { titlePts += 8; titleNotes.push(`Title tag ("${meta.title}", ${titleLen} chars) is under the ~60-character display limit and includes the target keyword — this is close to ideal.`); }
+      else if (titleLen > 60) { titlePts += 3; titleNotes.push(`Title tag is ${titleLen} characters, which will likely get truncated with "…" in Google's results past ~60 characters. Shorten it while keeping the target keyword near the beginning, since the first few words carry the most weight.`); }
+      else if (!titleHasKw) { titlePts += 3; titleNotes.push(`Title tag ("${meta.title}") doesn't include the target keyword. Rework it to lead with the keyword or a close variant — this is one of the strongest ranking signals available and costs nothing to fix.`); }
+    }
+    if (!meta.metaDesc) { titleNotes.push("No meta description found. While not a direct ranking factor, it's your ad copy in the search results — write 140-160 characters that state the specific benefit and include a reason to click."); }
+    else {
+      const descLen = meta.metaDesc.length;
+      if (descLen >= 120 && descLen <= 160) { titlePts += 7; titleNotes.push(`Meta description is ${descLen} characters — a good length that won't get truncated and gives Google enough to work with.`); }
+      else if (descLen < 120) { titlePts += 4; titleNotes.push(`Meta description is only ${descLen} characters — there's room to add a concrete benefit or call-to-action before hitting the ~160 character limit.`); }
+      else { titlePts += 4; titleNotes.push(`Meta description is ${descLen} characters and will likely be truncated past 160. Trim it to the single strongest sentence.`); }
+    }
+    categories.push({ label:"Title tag & meta description", points:titlePts, max:15, notes:titleNotes });
+
+    // --- Media & accessibility ---
+    let mediaPts = 0; const mediaNotes = [];
+    if (meta.imgTotal === 0) { mediaPts = 6; mediaNotes.push("No images found on this page. That's not necessarily wrong, but relevant imagery (with descriptive alt text) is a missed opportunity for both user engagement and image search traffic."); }
+    else if (meta.imgMissingAlt === 0) { mediaPts = 10; mediaNotes.push(`All ${meta.imgTotal} image${meta.imgTotal===1?'':'s'} have alt text — good for accessibility (screen readers) and gives Google additional context about page content.`); }
+    else { mediaPts = 3; mediaNotes.push(`${meta.imgMissingAlt} of ${meta.imgTotal} images are missing alt text. Add a specific, descriptive alt attribute to each (what the image actually shows, not just the filename) — this affects both accessibility compliance and image search visibility.`); }
+    categories.push({ label:"Media & accessibility", points:mediaPts, max:10, notes:mediaNotes });
+
+    // --- Internal / external linking ---
+    let linkPts = 0; const linkNotes = [];
+    if (meta.internalLinks === 0) { linkNotes.push("No internal links detected. Link to at least 2-3 related pages (other services, relevant blog posts, or the contact page) — this spreads authority across your site and helps both users and crawlers discover related content."); }
+    else if (meta.internalLinks >= 2) { linkPts += 6; linkNotes.push(`${meta.internalLinks} internal links found — good, this helps distribute page authority and gives users a next step.`); }
+    else { linkPts += 3; linkNotes.push(`Only ${meta.internalLinks} internal link found. Add a couple more to genuinely related pages.`); }
+    if (meta.externalLinks > 0) { linkPts += 4; linkNotes.push(`${meta.externalLinks} external link${meta.externalLinks===1?'':'s'} found — linking out to authoritative, relevant sources (when genuinely useful to the reader) is a positive trust signal, not something to avoid.`); }
+    else { linkNotes.push("No external links found. This isn't a hard requirement, but a link to a genuinely authoritative source (an industry standard, a government resource, a manufacturer spec sheet) can strengthen topical trust."); }
+    categories.push({ label:"Internal & external linking", points:linkPts, max:10, notes:linkNotes });
+
+    // --- Structured data ---
+    let schemaPts = 0; const schemaNotes = [];
+    if (meta.hasSchema) { schemaPts = 5; schemaNotes.push("Structured data (JSON-LD) was detected on this page — good. Double-check it in the Schema Markup tab's Source Audit to confirm it matches what's generated there and has no conflicting IDs."); }
+    else { schemaNotes.push("No structured data (JSON-LD) detected on this page. Use the Schema Markup tab to generate and add the appropriate schema for this page type — it's one of the clearest ways to help both Google and LLMs understand exactly what this page is."); }
+    categories.push({ label:"Structured data", points:schemaPts, max:5, notes:schemaNotes });
   }
 
-  // Readability proxy
-  if (avgWordsPerSentence<=22) { score+=15; } else { score+=5; notes.push(`Average sentence length is ${avgWordsPerSentence.toFixed(1)} words — tightening long sentences usually improves readability scores.`); }
+  // --- Call to action ---
+  let ctaPts = 0; const ctaNotes = [];
+  if (pageType === "Service page" || pageType === "Landing page") {
+    if (/contact|call|book|schedule|quote|get started|request/i.test(text)) { ctaPts = 5; ctaNotes.push("A clear call-to-action phrase was detected — good, this page gives the reader an obvious next step."); }
+    else { ctaNotes.push("No clear call-to-action was detected. Service and landing pages should close with a direct instruction — \"Call us for a free quote,\" \"Book your appointment today\" — rather than trailing off after the last feature."); }
+  } else {
+    ctaPts = 5; ctaNotes.push(`A hard call-to-action isn't essential for a ${pageType.toLowerCase()}, so this category is scored as satisfied by default.`);
+  }
+  categories.push({ label:"Call to action", points:ctaPts, max:5, notes:ctaNotes });
 
-  // Meta-ish check: presence of a clear CTA-like closing for service/landing pages
-  if ((pageType==="Service page" || pageType==="Landing page")) {
-    if (/contact|call|book|schedule|quote|get started/i.test(text)) { score+=10; } else { notes.push("No clear call-to-action detected — service and landing pages should close with a direct next step."); }
-  } else { score+=10; }
+  const earned = categories.reduce((s,c)=>s+c.points,0);
+  const possible = categories.reduce((s,c)=>s+c.max,0);
+  const score = possible ? Math.round((earned/possible)*100) : 0;
 
-  score = Math.max(0, Math.min(100, Math.round(score)));
-  return { score, notes, wordCount, density: density.toFixed(2), headings, questions, avgWordsPerSentence: avgWordsPerSentence.toFixed(1) };
+  return { score, categories, wordCount, density: density.toFixed(2), sourceMode: !!meta,
+    meta: meta ? { title: meta.title, metaDesc: meta.metaDesc, h1Count: meta.h1s.length, h2Count: meta.h2Count, imgTotal: meta.imgTotal, imgMissingAlt: meta.imgMissingAlt, internalLinks: meta.internalLinks, externalLinks: meta.externalLinks, hasSchema: meta.hasSchema } : null };
 }
 
 function runContentGrade(){
-  const text = document.getElementById("cg-content").value;
+  const raw = document.getElementById("cg-content").value;
   const keyword = document.getElementById("cg-keyword").value;
   const pageType = document.getElementById("cg-type").value;
-  const result = gradeContent(text, keyword, pageType);
+  const result = gradeContentDeep(raw, keyword, pageType, CG_MODE);
   const ringColor = result.score>=75 ? "var(--green)" : result.score>=50 ? "var(--amber)" : "var(--red)";
   document.getElementById("cg-results").innerHTML = `
     <div class="card" style="margin-top:14px;display:flex;gap:18px;align-items:flex-start;">
-      ${progressRing({ pct: result.score, color: ringColor, size: 80, thickness: 9, value: result.score, caption: "/ 100" })}
-      <div style="flex:1;">
-        <div style="display:flex;gap:16px;margin-bottom:10px;flex-wrap:wrap;">
+      ${progressRing({ pct: result.score, color: ringColor, size: 84, thickness: 9, value: result.score, caption: "/ 100" })}
+      <div style="flex:1;min-width:0;">
+        <div style="display:flex;gap:10px;margin-bottom:12px;flex-wrap:wrap;">
           <span class="tag mono">${result.wordCount} words</span>
           <span class="tag mono">${result.density}% keyword density</span>
-          <span class="tag mono">${result.headings} headings</span>
-          <span class="tag mono">${result.avgWordsPerSentence} words/sentence</span>
+          ${result.sourceMode ? `<span class="tag mono">${result.meta.imgTotal} images (${result.meta.imgMissingAlt} missing alt)</span><span class="tag mono">${result.meta.internalLinks} internal / ${result.meta.externalLinks} external links</span>` : `<span class="tag" style="color:var(--orange-dim);">Switch to Page source for title/meta/media/link checks</span>`}
         </div>
-        <ul style="margin:0;padding-left:18px;color:var(--charcoal);font-size:13px;line-height:1.6;">
-          ${result.notes.map(n=>`<li>${esc(n)}</li>`).join("") || "<li>No major issues found for this page type — nice work.</li>"}
-        </ul>
+        ${result.categories.map(cat => `
+          <div style="margin-bottom:14px;">
+            <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:4px;">
+              <b style="color:var(--charcoal);font-size:13px;">${esc(cat.label)}</b>
+              <span class="mono" style="font-size:12px;color:${cat.points>=cat.max*0.7?'var(--green)':cat.points>=cat.max*0.4?'var(--amber)':'var(--red)'};">${cat.points}/${cat.max}</span>
+            </div>
+            <ul style="margin:0;padding-left:18px;color:var(--text-dim);font-size:12.5px;line-height:1.55;">
+              ${cat.notes.map(n=>`<li style="margin-bottom:4px;">${esc(n)}</li>`).join("")}
+            </ul>
+          </div>
+        `).join("")}
       </div>
     </div>
   `;
   const d = activeData();
-  d.contentAudits.unshift({ date: fmtDate(new Date()), pageType, keyword, score: result.score });
-  persist();
+  d.contentAudits.unshift({ id:"aud_"+Date.now(), date: fmtDate(new Date()), pageType, keyword, score: result.score });
+  persist(); renderContent();
+}
+
+let CG_LIVE_TIMER = null;
+function cgScheduleLiveGrade(){
+  const el = document.getElementById("cg-live-indicator");
+  if (el) el.textContent = "Re-grading in a moment…";
+  clearTimeout(CG_LIVE_TIMER);
+  CG_LIVE_TIMER = setTimeout(()=>{
+    const raw = document.getElementById("cg-content")?.value;
+    if (!raw || !raw.trim()) { if(el) el.textContent = ""; return; }
+    const keyword = document.getElementById("cg-keyword").value;
+    const pageType = document.getElementById("cg-type").value;
+    const result = gradeContentDeep(raw, keyword, pageType, CG_MODE);
+    const ringColor = result.score>=75 ? "var(--green)" : result.score>=50 ? "var(--amber)" : "var(--red)";
+    const resultsEl = document.getElementById("cg-results");
+    if (resultsEl) resultsEl.innerHTML = `
+      <div class="card" style="margin-top:14px;display:flex;gap:18px;align-items:flex-start;">
+        ${progressRing({ pct: result.score, color: ringColor, size: 84, thickness: 9, value: result.score, caption: "/ 100" })}
+        <div style="flex:1;min-width:0;">
+          <div style="display:flex;gap:10px;margin-bottom:12px;flex-wrap:wrap;">
+            <span class="tag mono">${result.wordCount} words</span>
+            <span class="tag mono">${result.density}% keyword density</span>
+            ${result.sourceMode ? `<span class="tag mono">${result.meta.imgTotal} images (${result.meta.imgMissingAlt} missing alt)</span><span class="tag mono">${result.meta.internalLinks} internal / ${result.meta.externalLinks} external links</span>` : `<span class="tag" style="color:var(--orange-dim);">Switch to Page source for title/meta/media/link checks</span>`}
+          </div>
+          ${result.categories.map(cat => `
+            <div style="margin-bottom:14px;">
+              <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:4px;">
+                <b style="color:var(--charcoal);font-size:13px;">${esc(cat.label)}</b>
+                <span class="mono" style="font-size:12px;color:${cat.points>=cat.max*0.7?'var(--green)':cat.points>=cat.max*0.4?'var(--amber)':'var(--red)'};">${cat.points}/${cat.max}</span>
+              </div>
+              <ul style="margin:0;padding-left:18px;color:var(--text-dim);font-size:12.5px;line-height:1.55;">
+                ${cat.notes.map(n=>`<li style="margin-bottom:4px;">${esc(n)}</li>`).join("")}
+              </ul>
+            </div>
+          `).join("")}
+        </div>
+      </div>
+    `;
+    if (el) el.textContent = "Updated live — click \"Grade this content\" to save this as a saved assessment.";
+  }, 700);
 }
 
 async function runDeepGrade(){
@@ -1384,7 +1606,7 @@ async function runDeepGrade(){
 // =====================================================================
 const schUid = () => Math.random().toString(36).slice(2,10);
 function newSchemaService(){ return { id:schUid(), name:"", url:"", serviceType:"", category:"", description:"", audience:"", area:"", image:"", warranty:"", tiers:"" }; }
-function newSchemaFaq(){ return { id:schUid(), q:"", a:"" }; }
+function newSchemaFaq(){ return { id:schUid(), q:"", a:"", pageId:"" }; }
 function newSchemaPerson(){ return { id:schUid(), name:"", title:"", bio:"", credentials:"", linkedin:"", photo:"" }; }
 function newSchemaReview(){ return { id:schUid(), body:"", author:"", jobTitle:"", company:"", date:"", serviceId:"", permission:false }; }
 function newSchemaPage(url,type){ return { id:schUid(), url:url||"", type:type||"generic", title:"", desc:"", published:"", modified:"", implemented:false, includeFaq:false, serviceId:"", articleHeadline:"", articleImage:"", articleDate:"", articleAuthorId:"" }; }
@@ -1481,6 +1703,7 @@ function schemaArea(label,bind,{ph="",hint="",rows=3}={}){
 // ---------------------------------------------------------------------
 function schemaViewProfile(){
   return `
+    ${schemaLiveSummary(schemaClient())}
     <div class="section-title"><h2>Identity</h2></div>
     <div class="card">
       <div class="form-row">
@@ -1606,6 +1829,7 @@ function schemaViewServices(){
       ${schemaArea("Tiers / packages",`services.${i}.tiers`,{ph:"Full package|Everything included.\nBasic|Core service only.",hint:"Name|Description",rows:2})}
     </div>`).join("");
   return `
+    ${schemaLiveSummary(c)}
     <p class="sub" style="color:var(--text-dim);margin-bottom:14px;">Each service becomes its own Service entity anchored to its page URL, cross-linked to your business via <code>provider</code>.</p>
     ${items || `<div class="card" style="color:var(--text-dim);">No services yet.</div>`}
     <button class="btn btn-primary" onclick="schemaAddService()">+ Add service</button>
@@ -1619,14 +1843,39 @@ function afterSchemaServices(){}
 // ---------------------------------------------------------------------
 // STEP: FAQs, people, reviews
 // ---------------------------------------------------------------------
+function schemaLiveSummary(c){
+  const homePage = c.pages.find(p=>p.type==="home");
+  return `
+    <div class="card" style="margin-bottom:16px;background:var(--panel-2);">
+      <div style="display:flex;gap:18px;flex-wrap:wrap;font-size:12.5px;color:var(--text-dim);align-items:center;">
+        <b style="color:var(--charcoal);">Currently in this schema:</b>
+        <span class="tag">${c.services.filter(s=>s.name).length} services</span>
+        <span class="tag">${c.faqs.filter(f=>f.q&&f.a).length} FAQs</span>
+        <span class="tag">${c.people.filter(p=>p.name).length} people</span>
+        <span class="tag">${c.reviews.filter(r=>r.permission&&r.body).length} reviews</span>
+        <span class="tag">${c.pages.filter(p=>p.url).length} pages</span>
+        ${homePage ? `<span class="tag" style="color:var(--green);">home page: ${esc(homePage.url)}</span>` : `<span class="tag" style="color:var(--red);">no home page set</span>`}
+        <a href="#" onclick="schemaGo('generate');return false;" style="margin-left:auto;font-size:12px;">View live generated output →</a>
+      </div>
+    </div>
+  `;
+}
+function schemaFaqPageLabel(c,f){
+  if (!f.pageId) return "All pages with FAQ enabled";
+  const p = c.pages.find(x=>x.id===f.pageId);
+  return p ? `Only: ${p.url}` : "Only: (page no longer exists)";
+}
 function schemaViewContent(){
   const c = schemaClient();
+  const pageOpts = sel => `<option value="">All pages with FAQ enabled</option>` + c.pages.map(p=>`<option value="${p.id}" ${sel===p.id?"selected":""}>${esc(p.url)} (${p.type})</option>`).join("");
   const faqs = c.faqs.map((f,i)=>`
     <div class="repeat-item">
       <button class="btn small btn-ghost" onclick="schemaRemoveFaq('${f.id}')" style="position:absolute;top:12px;right:12px;">Remove</button>
-      <h3>FAQ ${i+1}</h3>
+      <h3>FAQ ${i+1} <span class="pill opportunity" style="font-size:10px;font-weight:600;">${esc(schemaFaqPageLabel(c,f))}</span></h3>
       ${schemaField("Question",`faqs.${i}.q`)}
       <div style="margin-top:8px;">${schemaArea("Answer (must match visible page text exactly)",`faqs.${i}.a`,{rows:2})}</div>
+      <label class="field-wrap" style="margin-top:8px;max-width:340px;"><span class="field-label">Applies to</span>
+        <select data-schema-faqpage="${i}">${pageOpts(f.pageId)}</select></label>
     </div>`).join("");
   const people = c.people.map((p,i)=>`
     <div class="repeat-item">
@@ -1654,6 +1903,7 @@ function schemaViewContent(){
       <label class="check" style="display:flex;align-items:center;gap:8px;margin-top:8px;font-size:12.5px;color:var(--text-dim);"><input type="checkbox" data-schema-bind="reviews.${i}.permission" style="width:14px;height:14px;"> I have written permission to publish this with attribution</label>
     </div>`).join("");
   return `
+    ${schemaLiveSummary(c)}
     <div class="section-title"><h2>FAQs</h2></div>
     ${faqs || `<div class="card" style="color:var(--text-dim);">No FAQs yet — that's fine, the FAQ block just won't be generated.</div>`}
     <button class="btn btn-primary" onclick="schemaAddFaq()">+ Add FAQ</button>
@@ -1675,7 +1925,11 @@ function schemaAddReview(){ schemaClient().reviews.push(newSchemaReview()); pers
 function schemaRemoveFaq(id){ const c=schemaClient(); c.faqs=c.faqs.filter(x=>x.id!==id); persist(); renderContent(); }
 function schemaRemovePerson(id){ const c=schemaClient(); c.people=c.people.filter(x=>x.id!==id); persist(); renderContent(); }
 function schemaRemoveReview(id){ const c=schemaClient(); c.reviews=c.reviews.filter(x=>x.id!==id); persist(); renderContent(); }
-function afterSchemaContent(){}
+function afterSchemaContent(){
+  document.querySelectorAll("[data-schema-faqpage]").forEach(sel=>sel.addEventListener("change",()=>{
+    schemaClient().faqs[+sel.dataset.schemaFaqpage].pageId = sel.value; persist(); renderContent();
+  }));
+}
 
 // ---------------------------------------------------------------------
 // STEP: Pages & sitemap (metadata extraction from site structure)
@@ -1715,6 +1969,7 @@ function schemaViewPages(){
   </tr>`).join("");
   const done = c.pages.filter(p=>p.implemented).length;
   return `
+    ${schemaLiveSummary(c)}
     <div class="card">
       <div class="form-row">
         ${schemaField("Declared page count (if no sitemap yet)","meta.declaredPageCount",{type:"number",ph:"12"})}
@@ -1819,6 +2074,7 @@ function schemaRunAudit(){
 
   const blocks = [...doc.querySelectorAll('script[type="application/ld+json"]')];
   const foundIds = []; let hasAggregate=false, hasFaq=false, foundTypes=[]; let parsedOk=0, parseErrors=0;
+  let orgDetails = {}; // fields harvested from an existing Organization/LocalBusiness node, if any
   blocks.forEach(b=>{
     try{
       const j = JSON.parse(b.textContent); parsedOk++;
@@ -1829,9 +2085,25 @@ function schemaRunAudit(){
         if(n["@id"]) foundIds.push(n["@id"]);
         if(JSON.stringify(n).includes('"aggregateRating"')) hasAggregate=true;
         if(t.includes("FAQPage")) hasFaq=true;
+        if(/Organization|LocalBusiness|.+Business|Store|Restaurant|.+Contractor|.+Service/.test(t) && !orgDetails.name){
+          orgDetails = {
+            name: n.name, telephone: n.telephone, email: n.email,
+            street: n.address?.streetAddress, city: n.address?.addressLocality,
+            region: n.address?.addressRegion, postal: n.address?.postalCode, country: n.address?.addressCountry,
+            logo: typeof n.logo === "string" ? n.logo : n.logo?.url,
+            sameAs: Array.isArray(n.sameAs) ? n.sameAs : (n.sameAs ? [n.sameAs] : []),
+          };
+        }
       });
     }catch(e){ parseErrors++; }
   });
+
+  // Fallback phone extraction straight from markup if no JSON-LD phone found.
+  if(!orgDetails.telephone){
+    const telLink = doc.querySelector('a[href^="tel:"]')?.getAttribute("href");
+    if(telLink) orgDetails.telephone = telLink.replace("tel:","");
+  }
+
   const gen = schemaGenerateAll(c);
   const myIds = new Set(); gen.forEach(g=>g.graph["@graph"].forEach(n=>n["@id"]&&myIds.add(n["@id"])));
   const collisions = foundIds.filter(id=>myIds.has(id));
@@ -1846,6 +2118,21 @@ function schemaRunAudit(){
     ${hasFaq?`<div class="schema-warnbox">An FAQ block already exists here. If you generate one too, remove the old one first.</div>`:""}`}
   </div>`);
 
+  // Detected business-detail fields, ready to import into the profile.
+  const detailRows = [
+    ["Business name", orgDetails.name], ["Phone", orgDetails.telephone], ["Email", orgDetails.email],
+    ["Street", orgDetails.street], ["City", orgDetails.city], ["Region", orgDetails.region],
+    ["Postal code", orgDetails.postal], ["Country", orgDetails.country], ["Logo URL", orgDetails.logo],
+    ["Social links found", orgDetails.sameAs?.length ? orgDetails.sameAs.join(", ") : null],
+  ].filter(([,v])=>v);
+  window.__lastAuditOrgDetails = orgDetails; // stashed for the import button below
+  if(detailRows.length){
+    out.push(`<div class="card"><div class="section-title"><h2>Business details found on this page</h2></div>
+      <table>${detailRows.map(([label,val])=>`<tr><td style="color:var(--text-dim);width:160px;">${esc(label)}</td><td>${esc(val)}</td></tr>`).join("")}</table>
+      <button class="btn btn-primary" style="margin-top:10px;" onclick="schemaImportAuditDetails()">Import into Business Profile (only fills currently-empty fields)</button>
+    </div>`);
+  }
+
   const pid = document.getElementById("schemaAuditPage").value;
   if(pid && (title||desc)){
     out.push(`<div class="card"><div class="section-title"><h2>Sync into page record</h2></div>
@@ -1853,6 +2140,27 @@ function schemaRunAudit(){
       <button class="btn btn-primary" onclick="schemaSyncAudit('${pid}','${esc(title||"").replace(/'/g,"\\'")}','${esc(desc||"").replace(/'/g,"\\'")}')">Pull title &amp; description into page record</button></div>`);
   }
   document.getElementById("schemaAuditOut").innerHTML = out.join("");
+}
+function schemaImportAuditDetails(){
+  const o = window.__lastAuditOrgDetails || {};
+  const p = schemaClient().profile;
+  const fillIfEmpty = (key, val) => { if (val && !p[key]) p[key] = val; };
+  fillIfEmpty("tradeName", o.name); fillIfEmpty("phone", o.telephone); fillIfEmpty("email", o.email);
+  fillIfEmpty("street", o.street); fillIfEmpty("city", o.city); fillIfEmpty("region", o.region);
+  fillIfEmpty("postal", o.postal); fillIfEmpty("country", o.country); fillIfEmpty("logoUrl", o.logo);
+  if (o.sameAs?.length) {
+    const s = schemaClient().socials;
+    o.sameAs.forEach(url => {
+      if (/facebook/.test(url) && !s.facebook) s.facebook = url;
+      else if (/instagram/.test(url) && !s.instagram) s.instagram = url;
+      else if (/linkedin/.test(url) && !s.linkedin) s.linkedin = url;
+      else if (/youtube/.test(url) && !s.youtube) s.youtube = url;
+      else if (/twitter|x\.com/.test(url) && !s.x) s.x = url;
+      else if (!s.other.includes(url)) s.other = (s.other ? s.other + "\n" : "") + url;
+    });
+  }
+  persist();
+  alert("Imported — check Business profile to review and adjust.");
 }
 function schemaSyncAudit(pid,title,desc){
   const c = schemaClient(); const p = c.pages.find(x=>x.id===pid); if(!p) return;
@@ -1965,7 +2273,7 @@ function schemaBreadcrumbNode(c,p){
   return {"@type":"BreadcrumbList","@id":p.url.replace(/\/$/,"")+"/#breadcrumb","itemListElement":items};
 }
 function schemaFaqNode(c,p){
-  const qs=c.faqs.filter(f=>f.q&&f.a); if(!qs.length) return undefined;
+  const qs=c.faqs.filter(f=>f.q&&f.a&&(!f.pageId||f.pageId===p.id)); if(!qs.length) return undefined;
   return {"@type":"FAQPage","@id":p.url.replace(/\/$/,"")+"/#faq","mainEntity":qs.map(f=>({"@type":"Question","name":f.q,"acceptedAnswer":{"@type":"Answer","text":f.a}}))};
 }
 function schemaWebPageNode(c,p,extra={}){
@@ -2001,7 +2309,7 @@ function schemaGeneratePage(c,p){
     push(schemaOrgFull(c)); push(schemaLogoNode(c)); push(schemaHeroNode(c)); push(schemaWebsiteNode(c,true));
     c.services.filter(s=>s.name).forEach(s=>push(schemaServiceNode(c,s)));
     push(schemaWebPageNode(c,p,{props:{"mainEntity":{"@id":I.org},"primaryImageOfPage": c.profile.heroUrl?{"@id":I.hero}:undefined,
-      "hasPart": (p.includeFaq&&c.faqs.some(f=>f.q&&f.a))?[{"@id":p.url.replace(/\/$/,"")+"/#faq"}]:undefined}}));
+      "hasPart": (p.includeFaq&&c.faqs.some(f=>f.q&&f.a&&(!f.pageId||f.pageId===p.id)))?[{"@id":p.url.replace(/\/$/,"")+"/#faq"}]:undefined}}));
     push(schemaBreadcrumbNode(c,p));
     if(p.includeFaq) push(schemaFaqNode(c,p));
   } else {
@@ -2016,9 +2324,9 @@ function schemaGeneratePage(c,p){
       case "about": push(schemaWebPageNode(c,p,{pageType:"AboutPage",props:{"mainEntity":{"@id":I.org}}})); break;
       case "contact": push(schemaWebPageNode(c,p,{pageType:"ContactPage",props:{"mainEntity":{"@id":I.org}}})); break;
       case "faq":
-        push(schemaWebPageNode(c,p,{props:{"hasPart":c.faqs.some(f=>f.q&&f.a)?[{"@id":p.url.replace(/\/$/,"")+"/#faq"}]:undefined}}));
+        push(schemaWebPageNode(c,p,{props:{"hasPart":c.faqs.some(f=>f.q&&f.a&&(!f.pageId||f.pageId===p.id))?[{"@id":p.url.replace(/\/$/,"")+"/#faq"}]:undefined}}));
         push(schemaFaqNode(c,p));
-        if(!c.faqs.some(f=>f.q&&f.a)) warnings.push("This is an FAQ page but no FAQs are entered yet.");
+        if(!c.faqs.some(f=>f.q&&f.a&&(!f.pageId||f.pageId===p.id))) warnings.push("This is an FAQ page but no FAQs are assigned to it yet (check each FAQ's \"Applies to\" setting).");
         break;
       case "team": {
         const people=c.people.filter(x=>x.name); people.forEach(per=>push(schemaPersonNode(c,per)));
@@ -2162,6 +2470,218 @@ function schemaToggleImplemented(pid,checked){
 }
 
 // =====================================================================
+// GBP PERFORMANCE — a colored grid map showing how well the business
+// ranks in Google's local pack across its service area, for up to 10
+// chosen keywords.
+// =====================================================================
+function newGbpData(){
+  return { keywords: [], centerLat: "", centerLng: "", gridSize: 3, spacingKm: 2, results: {}, lastRun: null };
+}
+let GBP_MAP_INSTANCE = null;
+let GBP_MAP_LAYER = null;
+let GBP_SELECTED_KEYWORD = null; // which keyword's grid to show on the map
+
+function gbpBucketColor(position, inLocalPack){
+  if (position == null) return "#C6CCD3"; // not found at all — neutral gray
+  if (inLocalPack && position <= 3) return "#1FA971"; // green
+  if ((inLocalPack && position <= 10) || (!inLocalPack && position <= 10)) return "#E8C93D"; // yellow
+  if (position <= 20) return "#EA7A2E"; // orange
+  return "#E14B4B"; // red
+}
+function gbpBucketLabel(position, inLocalPack){
+  if (position == null) return "Not found in top 30";
+  if (inLocalPack && position <= 3) return `Local pack #${position} — excellent`;
+  if (inLocalPack) return `Local pack #${position} — good`;
+  if (position <= 10) return `Organic #${position} — no local pack, but ranking`;
+  if (position <= 20) return `Organic #${position} — weak`;
+  return `Organic #${position} — poor`;
+}
+
+function gbpBuildGrid(centerLat, centerLng, gridSize, spacingKm){
+  const points = [];
+  const half = Math.floor(gridSize / 2);
+  const kmPerDegLat = 110.574;
+  const kmPerDegLng = 111.320 * Math.cos(centerLat * Math.PI / 180);
+  for (let row = -half; row <= half; row++) {
+    for (let col = -half; col <= half; col++) {
+      const lat = centerLat + (row * spacingKm) / kmPerDegLat;
+      const lng = centerLng + (col * spacingKm) / kmPerDegLng;
+      points.push({ lat: +lat.toFixed(6), lng: +lng.toFixed(6) });
+    }
+  }
+  return points;
+}
+
+function renderGbpTab(){
+  const d = activeData();
+  const g = d.gbp;
+  const proj = currentProject();
+  const schemaLat = d.schema.profile.lat, schemaLng = d.schema.profile.lng;
+  if (!g.centerLat && schemaLat) g.centerLat = schemaLat;
+  if (!g.centerLng && schemaLng) g.centerLng = schemaLng;
+  const callCount = g.keywords.length * (g.gridSize * g.gridSize);
+
+  return `
+    <div class="notice">Colors your Google Business Profile's real performance across its service area — green where you'd show up in the local pack near the top, red where you're invisible — for up to 10 keywords you choose. Each grid point is a real, separate search from that exact location, so this uses one DataForSEO call per point per keyword — check the estimated call count below before running a large grid.</div>
+
+    <div class="card">
+      <div class="section-title" style="margin-top:0;"><h2>Keywords to check (up to 10)</h2></div>
+      <div class="form-row">
+        <div class="field-wrap" style="flex:1;min-width:240px;"><span class="field-label">Add a keyword</span><input id="gbp-kw-input" placeholder="e.g. web design calgary" onkeydown="if(event.key==='Enter'){gbpAddKeyword();event.preventDefault();}"></div>
+        <div class="field-wrap"><span class="field-label">&nbsp;</span><button class="btn btn-primary" onclick="gbpAddKeyword()">+ Add</button></div>
+        <div class="field-wrap"><span class="field-label">&nbsp;</span><button class="btn" onclick="gbpSuggestKeywords()">Suggest from tracked keywords</button></div>
+      </div>
+      <div style="margin-top:6px;">
+        ${g.keywords.map(k=>`<span class="gbp-kw-chip">${esc(k)}<button onclick="gbpRemoveKeyword('${esc(k).replace(/'/g,"\\'")}')">✕</button></span>`).join("") || `<span style="color:var(--text-dim);font-size:12.5px;">No keywords added yet.</span>`}
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="section-title" style="margin-top:0;"><h2>Service area center &amp; grid</h2></div>
+      <div class="form-row">
+        <div class="field-wrap"><span class="field-label">Center latitude</span><input id="gbp-lat" value="${esc(g.centerLat)}" placeholder="51.0447"></div>
+        <div class="field-wrap"><span class="field-label">Center longitude</span><input id="gbp-lng" value="${esc(g.centerLng)}" placeholder="-114.0719"></div>
+        <div class="field-wrap"><span class="field-label">Grid size</span>
+          <select id="gbp-grid-size">
+            <option value="3" ${g.gridSize===3?'selected':''}>3×3 (9 points per keyword)</option>
+            <option value="5" ${g.gridSize===5?'selected':''}>5×5 (25 points per keyword)</option>
+          </select>
+        </div>
+        <div class="field-wrap"><span class="field-label">Point spacing (km)</span><input id="gbp-spacing" value="${g.spacingKm}" placeholder="2"></div>
+      </div>
+      <p style="font-size:12px;color:var(--text-dim);margin:6px 0 0;">Estimated calls for this run: <b class="mono">${callCount}</b> (${g.keywords.length} keyword${g.keywords.length===1?'':'s'} × ${g.gridSize*g.gridSize} points). Center defaults to the latitude/longitude set in Schema Markup → Business profile if left blank.</p>
+      <div class="form-row" style="margin-top:10px;">
+        <button class="btn btn-primary" onclick="gbpRunScan()">Run GBP scan</button>
+      </div>
+    </div>
+
+    ${Object.keys(g.results).length ? `
+      <div class="section-title"><h2>Performance map</h2></div>
+      <div class="form-row" style="margin-bottom:10px;">
+        ${g.keywords.map(k => `<button class="subtab-btn ${GBP_SELECTED_KEYWORD===k?'active':''}" onclick="gbpSelectKeyword('${esc(k).replace(/'/g,"\\'")}')">${esc(k)}</button>`).join("")}
+      </div>
+      <div id="gbpMap"></div>
+      <div class="gbp-legend">
+        <span><span class="dot" style="background:#1FA971;"></span>Local pack top 3</span>
+        <span><span class="dot" style="background:#E8C93D;"></span>Local pack / ranked top 10</span>
+        <span><span class="dot" style="background:#EA7A2E;"></span>Ranked 11-20</span>
+        <span><span class="dot" style="background:#E14B4B;"></span>Ranked 21+ or not found</span>
+        <span><span class="dot" style="background:#C6CCD3;"></span>Not found in top 30</span>
+      </div>
+
+      <div class="section-title"><h2>Average performance by keyword</h2></div>
+      <table>
+        <thead><tr><th>Keyword</th><th>Avg. position</th><th>In local pack</th><th>Best point</th><th>Worst point</th></tr></thead>
+        <tbody>
+          ${g.keywords.filter(k=>g.results[k]).map(k => {
+            const pts = g.results[k].filter(p=>p.position!=null);
+            const avg = pts.length ? (pts.reduce((s,p)=>s+p.position,0)/pts.length).toFixed(1) : "—";
+            const inPack = g.results[k].filter(p=>p.inLocalPack).length;
+            const best = pts.length ? Math.min(...pts.map(p=>p.position)) : "—";
+            const worst = g.results[k].length ? (pts.length ? Math.max(...pts.map(p=>p.position)) : "not found anywhere") : "—";
+            return `<tr><td>${esc(k)}</td><td class="mono">${avg}</td><td class="mono">${inPack}/${g.results[k].length} points</td><td class="mono">${best}</td><td class="mono">${worst}</td></tr>`;
+          }).join("") || `<tr><td colspan="5" style="color:var(--text-dim);">No results yet.</td></tr>`}
+        </tbody>
+      </table>
+      <p style="font-size:11.5px;color:var(--text-dim);">Last run: ${g.lastRun ? esc(new Date(g.lastRun).toLocaleString()) : "—"}</p>
+    ` : `<div class="card" style="color:var(--text-dim);">Add keywords and run a scan to see the performance map.</div>`}
+  `;
+}
+
+function gbpAddKeyword(){
+  const g = activeData().gbp;
+  const input = document.getElementById("gbp-kw-input");
+  const val = input.value.trim();
+  if (!val) return;
+  if (g.keywords.length >= 10) { alert("You can track up to 10 keywords at a time for GBP performance."); return; }
+  if (g.keywords.includes(val)) { input.value = ""; return; }
+  g.keywords.push(val);
+  persist(); renderContent();
+}
+function gbpRemoveKeyword(k){
+  const g = activeData().gbp;
+  g.keywords = g.keywords.filter(x=>x!==k);
+  delete g.results[k];
+  persist(); renderContent();
+}
+function gbpSuggestKeywords(){
+  const d = activeData();
+  const g = d.gbp;
+  const candidates = [...new Set(d.keywords.map(k=>k.term))].filter(t => !g.keywords.includes(t));
+  if (!candidates.length) { alert("No tracked keywords to suggest from yet — add some in Keyword Tracking first, or type your own here."); return; }
+  const toAdd = candidates.slice(0, 10 - g.keywords.length);
+  g.keywords.push(...toAdd);
+  persist(); renderContent();
+}
+function gbpSelectKeyword(k){ GBP_SELECTED_KEYWORD = k; renderContent(); }
+
+async function gbpRunScan(){
+  const d = activeData();
+  const g = d.gbp;
+  if (!STATE.proxyEndpoint) { alert("Set your serverless proxy endpoint first (API & Settings)."); switchTab("settings"); return; }
+  if (!g.keywords.length) { alert("Add at least one keyword first."); return; }
+  const lat = parseFloat(document.getElementById("gbp-lat").value);
+  const lng = parseFloat(document.getElementById("gbp-lng").value);
+  const gridSize = parseInt(document.getElementById("gbp-grid-size").value, 10);
+  const spacingKm = parseFloat(document.getElementById("gbp-spacing").value) || 2;
+  if (isNaN(lat) || isNaN(lng)) { alert("Enter a valid center latitude and longitude (or set them in Schema Markup → Business profile first)."); return; }
+  g.centerLat = lat; g.centerLng = lng; g.gridSize = gridSize; g.spacingKm = spacingKm;
+
+  const points = gbpBuildGrid(lat, lng, gridSize, spacingKm);
+  const proj = currentProject();
+  const total = g.keywords.length * points.length;
+  let done = 0;
+  g.results = {};
+
+  for (const kw of g.keywords) {
+    g.results[kw] = [];
+    for (const pt of points) {
+      showLoading(`Scanning "${kw}" — point ${done+1} of ${total}…`);
+      try {
+        const res = await callProxy("gbp_grid_point", {
+          keyword: kw, lat: pt.lat, lng: pt.lng, radiusKm: Math.max(1, spacingKm/2),
+          businessName: proj.name, domain: proj.domain
+        });
+        g.results[kw].push({ lat: pt.lat, lng: pt.lng, position: res.position, inLocalPack: res.inLocalPack });
+      } catch(e) {
+        g.results[kw].push({ lat: pt.lat, lng: pt.lng, position: null, inLocalPack: false });
+      }
+      done++;
+    }
+  }
+  g.lastRun = new Date().toISOString();
+  GBP_SELECTED_KEYWORD = g.keywords[0];
+  hideLoading();
+  persist(); renderContent();
+}
+
+function afterGbpTab(){
+  const d = activeData();
+  const g = d.gbp;
+  if (!Object.keys(g.results).length) return;
+  if (!GBP_SELECTED_KEYWORD || !g.results[GBP_SELECTED_KEYWORD]) GBP_SELECTED_KEYWORD = g.keywords.find(k=>g.results[k]);
+  const mapEl = document.getElementById("gbpMap");
+  if (!mapEl || typeof L === "undefined") return;
+
+  if (GBP_MAP_INSTANCE) { GBP_MAP_INSTANCE.remove(); GBP_MAP_INSTANCE = null; }
+  GBP_MAP_INSTANCE = L.map("gbpMap").setView([g.centerLat, g.centerLng], 12);
+  L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+    attribution: '&copy; OpenStreetMap contributors', maxZoom: 18
+  }).addTo(GBP_MAP_INSTANCE);
+
+  const pts = g.results[GBP_SELECTED_KEYWORD] || [];
+  pts.forEach(p => {
+    const color = gbpBucketColor(p.position, p.inLocalPack);
+    const marker = L.circleMarker([p.lat, p.lng], {
+      radius: 16, fillColor: color, color: "#fff", weight: 2, opacity: 1, fillOpacity: 0.9
+    }).addTo(GBP_MAP_INSTANCE);
+    marker.bindPopup(`<b>${esc(GBP_SELECTED_KEYWORD)}</b><br>${esc(gbpBucketLabel(p.position, p.inLocalPack))}`);
+  });
+  // Business center marker
+  L.marker([g.centerLat, g.centerLng]).addTo(GBP_MAP_INSTANCE).bindPopup("Business location");
+}
+
+// =====================================================================
 // LLM VISIBILITY (Claude / ChatGPT / Perplexity answer-engine tracking)
 // =====================================================================
 const LLM_COLORS = { Claude:"#D97757", ChatGPT:"#10A37F", Perplexity:"#20808D" };
@@ -2208,8 +2728,13 @@ function renderLLM(){
             <td>
               <button class="btn-ghost" onclick="logLlmResult('${p.id}')">Log result</button>
               <button class="btn-ghost" onclick="autoCheckLlm('${p.id}')">Auto-check</button>
+              ${p.rawAnswer ? `<button class="btn-ghost" onclick="toggleLlmAnswer('${p.id}')">View answer</button>` : ''}
             </td>
           </tr>
+          ${p.rawAnswer && LLM_ANSWER_OPEN===p.id ? `
+          <tr><td colspan="6">
+            <div class="card" style="background:var(--panel-2);font-size:12.5px;line-height:1.6;white-space:pre-wrap;">${highlightOwnMentions(p.rawAnswer)}</div>
+          </td></tr>` : ''}
         `).join("") || `<tr><td colspan="6" style="color:var(--text-dim);">No prompts tracked yet.</td></tr>`}
       </tbody>
     </table>
@@ -2231,6 +2756,8 @@ function logLlmResult(id){
   p.history = p.history || []; p.history.push({ date:p.date, mentioned, rank });
   persist(); renderContent();
 }
+let LLM_ANSWER_OPEN = null;
+function toggleLlmAnswer(id){ LLM_ANSWER_OPEN = LLM_ANSWER_OPEN===id ? null : id; renderContent(); }
 async function autoCheckLlm(id){
   if (!STATE.proxyEndpoint) { alert("Auto-check needs your proxy endpoint (it calls the model API with your key server-side)."); switchTab("settings"); return; }
   const d = activeData(); const p = d.llmPrompts.find(x=>x.id===id);
@@ -2238,6 +2765,7 @@ async function autoCheckLlm(id){
   try {
     const res = await callProxy("llm_visibility_check", { prompt: p.prompt, model: p.model, brand: currentProject().name, domain: currentProject().domain });
     p.mentioned = res.mentioned; p.rank = res.rank; p.date = fmtDate(new Date());
+    p.rawAnswer = res.rawAnswer || "";
     p.history = p.history || []; p.history.push({ date:p.date, mentioned:res.mentioned, rank:res.rank });
   } catch(e){ alert("Auto-check failed — check your proxy endpoint & model API keys."); }
   hideLoading();
@@ -2247,9 +2775,31 @@ async function autoCheckLlm(id){
 // =====================================================================
 // HISTORY / SNAPSHOTS
 // =====================================================================
+let HISTORY_MODE = "day"; // "day" | "period"
+function historySetMode(m){ HISTORY_MODE = m; renderContent(); }
+
 function renderHistory(){
   const d = activeData();
   const dates = Object.keys(d.snapshots).sort().reverse();
+
+  return `
+    <div class="subtabs">
+      <button class="subtab-btn ${HISTORY_MODE==='day'?'active':''}" onclick="historySetMode('day')">Single day</button>
+      <button class="subtab-btn ${HISTORY_MODE==='period'?'active':''}" onclick="historySetMode('period')">Period average</button>
+    </div>
+    ${HISTORY_MODE === 'day' ? renderHistoryDay(d) : renderHistoryPeriod(d)}
+
+    <div class="section-title"><h2>All saved snapshots</h2></div>
+    <table>
+      <thead><tr><th>Date</th><th>Avg. position</th><th>Top 10 keywords</th><th>Live backlinks</th><th>LLM mentions</th></tr></thead>
+      <tbody>
+        ${dates.map(dt=>`<tr onclick="viewDate('${dt}')" style="cursor:pointer;"><td class="mono">${dt}</td><td class="mono">${d.snapshots[dt].avgPos}</td><td class="mono">${d.snapshots[dt].top10}</td><td class="mono">${d.snapshots[dt].liveBacklinks}</td><td class="mono">${d.snapshots[dt].llmMentions}</td></tr>`).join("") || `<tr><td colspan="5" style="color:var(--text-dim);">No history yet.</td></tr>`}
+      </tbody>
+    </table>
+  `;
+}
+
+function renderHistoryDay(d){
   const selected = document.getElementById("view-date").value;
   const snap = d.snapshots[selected];
   return `
@@ -2264,17 +2814,35 @@ function renderHistory(){
         <div class="card"><h3>LLM mentions</h3><div class="stat-value">${snap.llmMentions}</div></div>
       </div>
     ` : `<div class="card" style="color:var(--text-dim);">No snapshot saved for this date yet — pick a date you've saved, or save one for today.</div>`}
-
-    <div class="section-title"><h2>All saved snapshots</h2></div>
-    <table>
-      <thead><tr><th>Date</th><th>Avg. position</th><th>Top 10 keywords</th><th>Live backlinks</th><th>LLM mentions</th></tr></thead>
-      <tbody>
-        ${dates.map(dt=>`<tr onclick="viewDate('${dt}')" style="cursor:pointer;"><td class="mono">${dt}</td><td class="mono">${d.snapshots[dt].avgPos}</td><td class="mono">${d.snapshots[dt].top10}</td><td class="mono">${d.snapshots[dt].liveBacklinks}</td><td class="mono">${d.snapshots[dt].llmMentions}</td></tr>`).join("") || `<tr><td colspan="5" style="color:var(--text-dim);">No history yet.</td></tr>`}
-      </tbody>
-    </table>
   `;
 }
-function viewDate(dt){ document.getElementById("view-date").value = dt; renderContent(); }
+
+function renderHistoryPeriod(d){
+  const dates = Object.keys(d.snapshots).sort();
+  const from = document.getElementById("period-from")?.value || dates[0] || fmtDate(new Date());
+  const to = document.getElementById("period-to")?.value || dates[dates.length-1] || fmtDate(new Date());
+  const inRange = dates.filter(dt => dt >= from && dt <= to);
+  const avg = (key) => inRange.length ? +(inRange.reduce((s,dt)=>s+(d.snapshots[dt][key]||0),0)/inRange.length).toFixed(1) : 0;
+
+  return `
+    <div class="section-title"><h2>Average over a period</h2>
+      <button class="btn" onclick="saveSnapshot()">Save today's snapshot</button>
+    </div>
+    <div class="form-row">
+      <div class="field-wrap"><span class="field-label">From</span><input type="date" id="period-from" value="${esc(from)}" onchange="renderContent()"></div>
+      <div class="field-wrap"><span class="field-label">To</span><input type="date" id="period-to" value="${esc(to)}" onchange="renderContent()"></div>
+    </div>
+    ${inRange.length ? `
+      <div class="grid grid-4">
+        <div class="card"><h3>Avg. position</h3><div class="stat-value">${avg('avgPos')}</div><div class="stat-delta flat">averaged over ${inRange.length} day${inRange.length===1?'':'s'}</div></div>
+        <div class="card"><h3>Keywords in top 10</h3><div class="stat-value">${avg('top10')}</div><div class="stat-delta flat">average</div></div>
+        <div class="card"><h3>Live backlinks</h3><div class="stat-value">${avg('liveBacklinks')}</div><div class="stat-delta flat">average</div></div>
+        <div class="card"><h3>LLM mentions</h3><div class="stat-value">${avg('llmMentions')}</div><div class="stat-delta flat">average</div></div>
+      </div>
+    ` : `<div class="card" style="color:var(--text-dim);">No saved snapshots fall inside that date range.</div>`}
+  `;
+}
+function viewDate(dt){ document.getElementById("view-date").value = dt; HISTORY_MODE = "day"; renderContent(); }
 
 function saveSnapshot(){
   const p = currentProject();
@@ -2301,22 +2869,86 @@ function renderSettings(){
     <div class="notice">
       DataForSEO and any LLM provider APIs must be called from a server, not this page — otherwise your credentials would be visible to anyone viewing source on GitHub Pages. Your DataForSEO login/password and any LLM API keys live only as encrypted secrets on your deployed proxy (a Cloudflare Worker) — never in this file, never in your browser. This page only needs to know where that proxy lives.
     </div>
-    <div class="form-row" style="flex-direction:column;align-items:flex-start;max-width:520px;">
-      <div class="field-wrap" style="width:100%;"><span class="field-label">Serverless proxy endpoint URL</span><input id="set-proxy" style="width:100%;" value="${esc(STATE.proxyEndpoint)}" placeholder="https://edge-seo-proxy.your-subdomain.workers.dev"></div>
-      <button class="btn btn-primary" style="margin-top:10px;" onclick="saveSettings()">Save settings</button>
+    <div class="form-row" style="flex-direction:column;align-items:flex-start;max-width:560px;">
+      <div class="field-wrap" style="width:100%;">
+        <span class="field-label">Serverless proxy endpoint URL</span>
+        <div style="display:flex;gap:8px;">
+          <input id="set-proxy" type="password" style="width:100%;" value="${esc(STATE.proxyEndpoint)}" placeholder="https://edge-seo-proxy.your-subdomain.workers.dev">
+          <button class="btn" type="button" style="flex:none;" onclick="toggleProxyVisibility()" id="proxy-toggle-btn">Show</button>
+        </div>
+      </div>
+      <div class="form-row" style="margin-top:10px;">
+        <button class="btn btn-primary" onclick="saveSettings()">Save settings</button>
+        <button class="btn" onclick="testProxyConnection()" id="test-conn-btn">Test connection</button>
+      </div>
+      <div id="proxy-status" style="margin-top:4px;font-size:12.5px;">${proxyStatusHTML()}</div>
+    </div>
+
+    <div class="section-title"><h2>LLM provider status</h2></div>
+    <div class="card" style="max-width:560px;">
+      <p style="color:var(--text-dim);margin-top:0;">Claude, ChatGPT, and Perplexity API keys are configured as secrets on your Worker (never entered here). Test which ones are actually active without exposing the keys themselves.</p>
+      <button class="btn" onclick="testLlmProviders()">Check configured providers</button>
+      <div id="llm-provider-status" style="margin-top:10px;">${LLM_PROVIDER_STATUS ? llmProviderStatusHTML() : ''}</div>
     </div>
 
     <div class="section-title"><h2>Firebase</h2></div>
-    <div class="card" style="max-width:520px;">
+    <div class="card" style="max-width:560px;">
       <p style="color:var(--text-dim);margin-top:0;">Firebase is configured directly in the <code>firebaseConfig</code> object near the top of this file's script. Fill in your project's values there before deploying, then commit — this page will start syncing every project's data to Firestore automatically, with local storage as a live fallback if Firestore isn't reachable.</p>
       <p style="margin-bottom:0;"><span class="status-dot ${firebaseReady?'ok':''}" style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${firebaseReady?'var(--green)':'var(--red)'};margin-right:6px;"></span>${firebaseReady ? "Connected" : "Not configured yet"}</p>
     </div>
   `;
 }
+function toggleProxyVisibility(){
+  const inp = document.getElementById("set-proxy");
+  const btn = document.getElementById("proxy-toggle-btn");
+  if (inp.type === "password") { inp.type = "text"; btn.textContent = "Hide"; }
+  else { inp.type = "password"; btn.textContent = "Show"; }
+}
+let PROXY_STATUS = null; // null = unknown, true = reachable, false = failed
+function proxyStatusHTML(){
+  if (!STATE.proxyEndpoint) return `<span style="color:var(--text-dim);">No proxy URL saved yet.</span>`;
+  if (PROXY_STATUS === null) return `<span style="color:var(--text-dim);">Not tested yet this session — click "Test connection."</span>`;
+  return PROXY_STATUS
+    ? `<span style="color:var(--green);">● Connected — last checked ${esc(new Date().toLocaleTimeString())}</span>`
+    : `<span style="color:var(--red);">● Not reachable — check the URL and that the Worker is deployed.</span>`;
+}
+async function testProxyConnection(){
+  if (!STATE.proxyEndpoint) { alert("Enter and save a proxy URL first."); return; }
+  showLoading("Testing proxy connection…");
+  try {
+    const res = await callProxy("ping", {});
+    PROXY_STATUS = !!(res && res.ok);
+  } catch(e) { PROXY_STATUS = false; }
+  hideLoading();
+  document.getElementById("proxy-status").innerHTML = proxyStatusHTML();
+}
+let LLM_PROVIDER_STATUS = null;
+function llmProviderStatusHTML(){
+  const rows = ["Claude","ChatGPT","Perplexity"].map(m => {
+    const key = m === "Claude" ? "anthropic" : m === "ChatGPT" ? "openai" : "perplexity";
+    const on = LLM_PROVIDER_STATUS?.[key];
+    return `<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">
+      <span class="llm-logo" style="background:${LLM_COLORS[m]};">${m[0]}</span>${m}
+      <span style="margin-left:auto;color:${on?'var(--green)':'var(--text-dim)'};font-weight:600;font-size:12px;">${on?'● Configured':'○ Not set'}</span>
+    </div>`;
+  }).join("");
+  return rows;
+}
+async function testLlmProviders(){
+  if (!STATE.proxyEndpoint) { alert("Set your proxy endpoint first."); return; }
+  showLoading("Checking configured LLM providers…");
+  try {
+    LLM_PROVIDER_STATUS = await callProxy("llm_status", {});
+  } catch(e) { alert("Could not reach the proxy to check provider status."); }
+  hideLoading();
+  document.getElementById("llm-provider-status").innerHTML = LLM_PROVIDER_STATUS ? llmProviderStatusHTML() : '';
+}
 function saveSettings(){
   STATE.proxyEndpoint = document.getElementById("set-proxy").value.trim();
+  PROXY_STATUS = null;
   persist();
   alert("Settings saved.");
+  renderContent();
 }
 
 
