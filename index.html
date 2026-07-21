@@ -2796,7 +2796,8 @@ function afterGbpTab(){
     const marker = L.circleMarker([pt.lat, pt.lng], {
       radius: 16, fillColor: color, color: "#fff", weight: 2, opacity: 1, fillOpacity: 0.9
     }).addTo(GBP_MAP_INSTANCE);
-    marker.bindPopup(`<b>${esc(GBP_SELECTED_KEYWORD)}</b><br>${esc(gbpBucketLabel(pt.position, pt.inLocalPack))}`);
+    const verifyUrl = `https://www.google.com/maps/search/${encodeURIComponent(GBP_SELECTED_KEYWORD)}/@${pt.lat},${pt.lng},14z`;
+    marker.bindPopup(`<b>${esc(GBP_SELECTED_KEYWORD)}</b><br>${esc(gbpBucketLabel(pt.position, pt.inLocalPack))}<br><a href="${verifyUrl}" target="_blank" rel="noopener">Verify on Google Maps →</a>`);
   });
   L.marker([p.centerLat, p.centerLng]).addTo(GBP_MAP_INSTANCE).bindPopup(`${esc(p.label)}<br>${esc(p.businessName)}`);
 }
