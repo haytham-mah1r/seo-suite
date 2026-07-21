@@ -2512,20 +2512,19 @@ let GBP_SELECTED_KEYWORD = null; // which keyword's grid to show on the map
 // gray (not found at all).
 function gbpBucketColor(position, inLocalPack){
   if (position == null) return "#C6CCD3";
-  if (inLocalPack && position <= 3) return "#1FA971";
-  if ((inLocalPack && position <= 10) || (!inLocalPack && position <= 3)) return "#7ED9A8";
-  if (position <= 10) return "#E8C93D";
+  if (position <= 3) return "#1FA971";
+  if (position <= 10) return "#7ED9A8";
+  if (position <= 15) return "#E8C93D";
   if (position <= 20) return "#EA7A2E";
   return "#E14B4B";
 }
 function gbpBucketLabel(position, inLocalPack){
-  if (position == null) return "Not found in top 30";
-  if (inLocalPack && position <= 3) return `Local pack #${position} — excellent`;
-  if (inLocalPack) return `Local pack #${position} — good`;
-  if (position <= 3) return `Organic #${position} — no local pack, but strong`;
-  if (position <= 10) return `Organic #${position} — ranking, room to grow`;
-  if (position <= 20) return `Organic #${position} — weak`;
-  return `Organic #${position} — poor`;
+  if (position == null) return "Not found in top 20";
+  if (position <= 3) return `Local Finder #${position} — excellent`;
+  if (position <= 10) return `Local Finder #${position} — good`;
+  if (position <= 15) return `Local Finder #${position} — room to grow`;
+  if (position <= 20) return `Local Finder #${position} — weak`;
+  return `Local Finder #${position} — poor`;
 }
 
 function gbpBuildGrid(centerLat, centerLng, gridSize, spacingKm){
@@ -2626,12 +2625,12 @@ function renderGbpProfile(p){
       </div>
       <div id="gbpMap"></div>
       <div class="gbp-legend">
-        <span><span class="dot" style="background:#1FA971;"></span>Local pack top 3</span>
-        <span><span class="dot" style="background:#7ED9A8;"></span>Local pack 4-10 / strong organic</span>
-        <span><span class="dot" style="background:#E8C93D;"></span>Organic top 10</span>
-        <span><span class="dot" style="background:#EA7A2E;"></span>Ranked 11-20</span>
-        <span><span class="dot" style="background:#E14B4B;"></span>Ranked 21+</span>
-        <span><span class="dot" style="background:#C6CCD3;"></span>Not found in top 30</span>
+        <span><span class="dot" style="background:#1FA971;"></span>Local Finder #1-3 — excellent</span>
+        <span><span class="dot" style="background:#7ED9A8;"></span>#4-10 — good</span>
+        <span><span class="dot" style="background:#E8C93D;"></span>#11-15 — room to grow</span>
+        <span><span class="dot" style="background:#EA7A2E;"></span>#16-20 — weak</span>
+        <span><span class="dot" style="background:#E14B4B;"></span>Ranked below #20</span>
+        <span><span class="dot" style="background:#C6CCD3;"></span>Not found in top 20</span>
       </div>
 
       <div class="section-title"><h2>Average performance by keyword</h2></div>
