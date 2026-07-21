@@ -2777,6 +2777,21 @@ async function gbpRunScan(){
   persist(); renderContent();
 }
 
+// Builds Google's "uule" location-spoofing parameter for an exact lat/lng —
+// the same mechanism valentin.app and similar tools use to open real Google
+// results as they'd appear from a specific point, in a new tab.
+function buildUule(lat, lng){
+  const latE7 = Math.round(lat * 1e7);
+  const lngE7 = Math.round(lng * 1e7);
+  const timestamp = Date.now() * 1000; // microseconds since epoch
+  const text = `role:1\nproducer:12\nprovenance:0\ntimestamp:${timestamp}\nlatlng{\nlatitude_e7:${latE7}\nlongitude_e7:${lngE7}\n}\nradius:-1\n`;
+  return "a+" + btoa(text);
+}
+function googleVerifyUrl(keyword, lat, lng){
+  const uule = buildUule(lat, lng);
+  return `https://www.google.com/search?q=${encodeURIComponent(keyword)}&uule=${encodeURIComponent(uule)}&pws=0&hl=en`;
+}
+
 function afterGbpTab(){
   const p = gbpActiveProfile();
   if (!p || !Object.keys(p.results).length) return;
@@ -2796,8 +2811,8 @@ function afterGbpTab(){
     const marker = L.circleMarker([pt.lat, pt.lng], {
       radius: 16, fillColor: color, color: "#fff", weight: 2, opacity: 1, fillOpacity: 0.9
     }).addTo(GBP_MAP_INSTANCE);
-    const verifyUrl = `https://www.google.com/maps/search/${encodeURIComponent(GBP_SELECTED_KEYWORD)}/@${pt.lat},${pt.lng},14z`;
-    marker.bindPopup(`<b>${esc(GBP_SELECTED_KEYWORD)}</b><br>${esc(gbpBucketLabel(pt.position, pt.inLocalPack))}<br><a href="${verifyUrl}" target="_blank" rel="noopener">Verify on Google Maps →</a>`);
+    const verifyUrl = googleVerifyUrl(GBP_SELECTED_KEYWORD, pt.lat, pt.lng);
+    marker.bindPopup(`<b>${esc(GBP_SELECTED_KEYWORD)}</b><br>${esc(gbpBucketLabel(pt.position, pt.inLocalPack))}<br><a href="${verifyUrl}" target="_blank" rel="noopener">Verify on real Google →</a>`);
   });
   L.marker([p.centerLat, p.centerLng]).addTo(GBP_MAP_INSTANCE).bindPopup(`${esc(p.label)}<br>${esc(p.businessName)}`);
 }
