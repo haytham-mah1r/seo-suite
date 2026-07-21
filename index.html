@@ -464,6 +464,19 @@ function ensureProjectData(pid){
   if (STATE.data[pid].lastLiveSerp === undefined) STATE.data[pid].lastLiveSerp = null;
   if (!STATE.data[pid].schema) STATE.data[pid].schema = newSchemaData();
   if (!STATE.data[pid].gbp) STATE.data[pid].gbp = newGbpData();
+  if (!Array.isArray(STATE.data[pid].gbp.profiles)) {
+    // Migrate the old single-profile shape (keywords/results at the top level) into one profile.
+    const old = STATE.data[pid].gbp;
+    const migrated = newGbpProfile("Main location");
+    if (old.keywords?.length || Object.keys(old.results||{}).length) {
+      Object.assign(migrated, {
+        keywords: old.keywords || [], centerLat: old.centerLat || "", centerLng: old.centerLng || "",
+        gridSize: old.gridSize || 3, spacingKm: old.spacingKm || 2, results: old.results || {}, lastRun: old.lastRun || null,
+        businessName: (STATE.projects.find(p=>p.id===pid)?.name) || ""
+      });
+    }
+    STATE.data[pid].gbp = { profiles: (migrated.keywords.length || Object.keys(migrated.results).length) ? [migrated] : [], activeProfileId: null };
+  }
   return STATE.data[pid];
 }
 function activeData(){ return STATE.activeProjectId ? ensureProjectData(STATE.activeProjectId) : null; }
@@ -2474,25 +2487,43 @@ function schemaToggleImplemented(pid,checked){
 // ranks in Google's local pack across its service area, for up to 10
 // chosen keywords.
 // =====================================================================
+function newGbpProfile(label){
+  return {
+    id: "gbp_"+Date.now()+Math.round(Math.random()*1e4), label: label || "New GBP profile",
+    gbpLink: "", businessName: "", locationQuery: "", locationResolved: "",
+    centerLat: "", centerLng: "", gridSize: 3, spacingKm: 2,
+    keywords: [], results: {}, lastRun: null
+  };
+}
 function newGbpData(){
-  return { keywords: [], centerLat: "", centerLng: "", gridSize: 3, spacingKm: 2, results: {}, lastRun: null };
+  return { profiles: [], activeProfileId: null };
+}
+function gbpActiveProfile(){
+  const g = activeData().gbp;
+  if (!g.profiles.length) return null;
+  if (!g.activeProfileId || !g.profiles.find(p=>p.id===g.activeProfileId)) g.activeProfileId = g.profiles[0].id;
+  return g.profiles.find(p=>p.id===g.activeProfileId);
 }
 let GBP_MAP_INSTANCE = null;
-let GBP_MAP_LAYER = null;
 let GBP_SELECTED_KEYWORD = null; // which keyword's grid to show on the map
 
+// Five-tier color scale: dark green (pack top 3) → light green (pack 4-10 or
+// organic top 3) → yellow (organic top 10) → orange (11-20) → red (21+) →
+// gray (not found at all).
 function gbpBucketColor(position, inLocalPack){
-  if (position == null) return "#C6CCD3"; // not found at all — neutral gray
-  if (inLocalPack && position <= 3) return "#1FA971"; // green
-  if ((inLocalPack && position <= 10) || (!inLocalPack && position <= 10)) return "#E8C93D"; // yellow
-  if (position <= 20) return "#EA7A2E"; // orange
-  return "#E14B4B"; // red
+  if (position == null) return "#C6CCD3";
+  if (inLocalPack && position <= 3) return "#1FA971";
+  if ((inLocalPack && position <= 10) || (!inLocalPack && position <= 3)) return "#7ED9A8";
+  if (position <= 10) return "#E8C93D";
+  if (position <= 20) return "#EA7A2E";
+  return "#E14B4B";
 }
 function gbpBucketLabel(position, inLocalPack){
   if (position == null) return "Not found in top 30";
   if (inLocalPack && position <= 3) return `Local pack #${position} — excellent`;
   if (inLocalPack) return `Local pack #${position} — good`;
-  if (position <= 10) return `Organic #${position} — no local pack, but ranking`;
+  if (position <= 3) return `Organic #${position} — no local pack, but strong`;
+  if (position <= 10) return `Organic #${position} — ranking, room to grow`;
   if (position <= 20) return `Organic #${position} — weak`;
   return `Organic #${position} — poor`;
 }
@@ -2513,16 +2544,44 @@ function gbpBuildGrid(centerLat, centerLng, gridSize, spacingKm){
 }
 
 function renderGbpTab(){
-  const d = activeData();
-  const g = d.gbp;
-  const proj = currentProject();
-  const schemaLat = d.schema.profile.lat, schemaLng = d.schema.profile.lng;
-  if (!g.centerLat && schemaLat) g.centerLat = schemaLat;
-  if (!g.centerLng && schemaLng) g.centerLng = schemaLng;
-  const callCount = g.keywords.length * (g.gridSize * g.gridSize);
+  const g = activeData().gbp;
+  const p = gbpActiveProfile();
 
   return `
-    <div class="notice">Colors your Google Business Profile's real performance across its service area — green where you'd show up in the local pack near the top, red where you're invisible — for up to 10 keywords you choose. Each grid point is a real, separate search from that exact location, so this uses one DataForSEO call per point per keyword — check the estimated call count below before running a large grid.</div>
+    <div class="notice">Track one or more Google Business Profile listings — useful if your client has multiple locations. Paste each GBP's share link to identify it precisely, pick any location to test from (an address, city, or neighborhood — not just your own service area), and choose the keywords to check. Each grid point is a real, separate search from that exact spot, so this uses one DataForSEO call per point per keyword.</div>
+
+    <div class="card">
+      <div class="section-title" style="margin-top:0;"><h2>GBP profiles</h2></div>
+      <div style="margin-bottom:10px;">
+        ${g.profiles.map(pr => `<button class="subtab-btn ${p&&p.id===pr.id?'active':''}" onclick="gbpSelectProfile('${pr.id}')">${esc(pr.label)}</button>`).join("")}
+        <button class="btn" style="margin-left:6px;" onclick="gbpAddProfile()">+ Add GBP profile</button>
+      </div>
+      ${!g.profiles.length ? `<p style="color:var(--text-dim);font-size:12.5px;">Add a profile for each physical GBP listing you want to track — e.g. one per location if this business has more than one.</p>` : ''}
+    </div>
+
+    ${p ? renderGbpProfile(p) : ''}
+  `;
+}
+
+function renderGbpProfile(p){
+  const callCount = p.keywords.length * (p.gridSize * p.gridSize);
+  return `
+    <div class="card">
+      <div class="section-title" style="margin-top:0;">
+        <h2>${esc(p.label)}</h2>
+        <span>
+          <button class="btn-ghost" onclick="gbpRenameProfile('${p.id}')">Rename</button>
+          <button class="btn-ghost" onclick="gbpRemoveProfile('${p.id}')">Delete profile</button>
+        </span>
+      </div>
+      <div class="form-row">
+        <div class="field-wrap" style="flex:1;min-width:280px;"><span class="field-label">GBP share link</span><input id="gbp-link" value="${esc(p.gbpLink)}" placeholder="https://g.co/kgs/... or a Google Maps link"></div>
+        <div class="field-wrap"><span class="field-label">&nbsp;</span><button class="btn btn-primary" onclick="gbpResolveLink()">Resolve business name</button></div>
+      </div>
+      <div class="form-row">
+        <div class="field-wrap" style="flex:1;min-width:240px;"><span class="field-label">Business name (used to match this GBP in results)</span><input id="gbp-bizname" value="${esc(p.businessName)}" placeholder="Resolved automatically, or type it yourself"></div>
+      </div>
+    </div>
 
     <div class="card">
       <div class="section-title" style="margin-top:0;"><h2>Keywords to check (up to 10)</h2></div>
@@ -2532,40 +2591,46 @@ function renderGbpTab(){
         <div class="field-wrap"><span class="field-label">&nbsp;</span><button class="btn" onclick="gbpSuggestKeywords()">Suggest from tracked keywords</button></div>
       </div>
       <div style="margin-top:6px;">
-        ${g.keywords.map(k=>`<span class="gbp-kw-chip">${esc(k)}<button onclick="gbpRemoveKeyword('${esc(k).replace(/'/g,"\\'")}')">✕</button></span>`).join("") || `<span style="color:var(--text-dim);font-size:12.5px;">No keywords added yet.</span>`}
+        ${p.keywords.map(k=>`<span class="gbp-kw-chip">${esc(k)}<button onclick="gbpRemoveKeyword('${esc(k).replace(/'/g,"\\'")}')">✕</button></span>`).join("") || `<span style="color:var(--text-dim);font-size:12.5px;">No keywords added yet.</span>`}
       </div>
     </div>
 
     <div class="card">
-      <div class="section-title" style="margin-top:0;"><h2>Service area center &amp; grid</h2></div>
+      <div class="section-title" style="margin-top:0;"><h2>Location to test from</h2></div>
       <div class="form-row">
-        <div class="field-wrap"><span class="field-label">Center latitude</span><input id="gbp-lat" value="${esc(g.centerLat)}" placeholder="51.0447"></div>
-        <div class="field-wrap"><span class="field-label">Center longitude</span><input id="gbp-lng" value="${esc(g.centerLng)}" placeholder="-114.0719"></div>
+        <div class="field-wrap" style="flex:1;min-width:260px;"><span class="field-label">Any address, city, or place name</span><input id="gbp-location-query" value="${esc(p.locationQuery)}" placeholder="e.g. downtown Calgary, or a full address"></div>
+        <div class="field-wrap"><span class="field-label">&nbsp;</span><button class="btn btn-primary" onclick="gbpGeocodeLocation()">Locate</button></div>
+      </div>
+      ${p.locationResolved ? `<p style="font-size:12px;color:var(--green);margin:4px 0 0;">📍 ${esc(p.locationResolved)}</p>` : ''}
+      <div class="form-row" style="margin-top:10px;">
+        <div class="field-wrap"><span class="field-label">Center latitude</span><input id="gbp-lat" value="${esc(p.centerLat)}" placeholder="51.0447"></div>
+        <div class="field-wrap"><span class="field-label">Center longitude</span><input id="gbp-lng" value="${esc(p.centerLng)}" placeholder="-114.0719"></div>
         <div class="field-wrap"><span class="field-label">Grid size</span>
           <select id="gbp-grid-size">
-            <option value="3" ${g.gridSize===3?'selected':''}>3×3 (9 points per keyword)</option>
-            <option value="5" ${g.gridSize===5?'selected':''}>5×5 (25 points per keyword)</option>
+            <option value="3" ${p.gridSize===3?'selected':''}>3×3 (9 points per keyword)</option>
+            <option value="5" ${p.gridSize===5?'selected':''}>5×5 (25 points per keyword)</option>
           </select>
         </div>
-        <div class="field-wrap"><span class="field-label">Point spacing (km)</span><input id="gbp-spacing" value="${g.spacingKm}" placeholder="2"></div>
+        <div class="field-wrap"><span class="field-label">Point spacing (km)</span><input id="gbp-spacing" value="${p.spacingKm}" placeholder="2"></div>
       </div>
-      <p style="font-size:12px;color:var(--text-dim);margin:6px 0 0;">Estimated calls for this run: <b class="mono">${callCount}</b> (${g.keywords.length} keyword${g.keywords.length===1?'':'s'} × ${g.gridSize*g.gridSize} points). Center defaults to the latitude/longitude set in Schema Markup → Business profile if left blank.</p>
+      <p style="font-size:12px;color:var(--text-dim);margin:6px 0 0;">Estimated calls for this run: <b class="mono">${callCount}</b> (${p.keywords.length} keyword${p.keywords.length===1?'':'s'} × ${p.gridSize*p.gridSize} points).</p>
       <div class="form-row" style="margin-top:10px;">
         <button class="btn btn-primary" onclick="gbpRunScan()">Run GBP scan</button>
       </div>
     </div>
 
-    ${Object.keys(g.results).length ? `
-      <div class="section-title"><h2>Performance map</h2></div>
+    ${Object.keys(p.results).length ? `
+      <div class="section-title"><h2>Performance map — ${esc(p.label)}</h2></div>
       <div class="form-row" style="margin-bottom:10px;">
-        ${g.keywords.map(k => `<button class="subtab-btn ${GBP_SELECTED_KEYWORD===k?'active':''}" onclick="gbpSelectKeyword('${esc(k).replace(/'/g,"\\'")}')">${esc(k)}</button>`).join("")}
+        ${p.keywords.map(k => `<button class="subtab-btn ${GBP_SELECTED_KEYWORD===k?'active':''}" onclick="gbpSelectKeyword('${esc(k).replace(/'/g,"\\'")}')">${esc(k)}</button>`).join("")}
       </div>
       <div id="gbpMap"></div>
       <div class="gbp-legend">
         <span><span class="dot" style="background:#1FA971;"></span>Local pack top 3</span>
-        <span><span class="dot" style="background:#E8C93D;"></span>Local pack / ranked top 10</span>
+        <span><span class="dot" style="background:#7ED9A8;"></span>Local pack 4-10 / strong organic</span>
+        <span><span class="dot" style="background:#E8C93D;"></span>Organic top 10</span>
         <span><span class="dot" style="background:#EA7A2E;"></span>Ranked 11-20</span>
-        <span><span class="dot" style="background:#E14B4B;"></span>Ranked 21+ or not found</span>
+        <span><span class="dot" style="background:#E14B4B;"></span>Ranked 21+</span>
         <span><span class="dot" style="background:#C6CCD3;"></span>Not found in top 30</span>
       </div>
 
@@ -2573,112 +2638,167 @@ function renderGbpTab(){
       <table>
         <thead><tr><th>Keyword</th><th>Avg. position</th><th>In local pack</th><th>Best point</th><th>Worst point</th></tr></thead>
         <tbody>
-          ${g.keywords.filter(k=>g.results[k]).map(k => {
-            const pts = g.results[k].filter(p=>p.position!=null);
-            const avg = pts.length ? (pts.reduce((s,p)=>s+p.position,0)/pts.length).toFixed(1) : "—";
-            const inPack = g.results[k].filter(p=>p.inLocalPack).length;
-            const best = pts.length ? Math.min(...pts.map(p=>p.position)) : "—";
-            const worst = g.results[k].length ? (pts.length ? Math.max(...pts.map(p=>p.position)) : "not found anywhere") : "—";
-            return `<tr><td>${esc(k)}</td><td class="mono">${avg}</td><td class="mono">${inPack}/${g.results[k].length} points</td><td class="mono">${best}</td><td class="mono">${worst}</td></tr>`;
+          ${p.keywords.filter(k=>p.results[k]).map(k => {
+            const pts = p.results[k].filter(pt=>pt.position!=null);
+            const avg = pts.length ? (pts.reduce((s,pt)=>s+pt.position,0)/pts.length).toFixed(1) : "—";
+            const inPack = p.results[k].filter(pt=>pt.inLocalPack).length;
+            const best = pts.length ? Math.min(...pts.map(pt=>pt.position)) : "—";
+            const worst = p.results[k].length ? (pts.length ? Math.max(...pts.map(pt=>pt.position)) : "not found anywhere") : "—";
+            return `<tr><td>${esc(k)}</td><td class="mono">${avg}</td><td class="mono">${inPack}/${p.results[k].length} points</td><td class="mono">${best}</td><td class="mono">${worst}</td></tr>`;
           }).join("") || `<tr><td colspan="5" style="color:var(--text-dim);">No results yet.</td></tr>`}
         </tbody>
       </table>
-      <p style="font-size:11.5px;color:var(--text-dim);">Last run: ${g.lastRun ? esc(new Date(g.lastRun).toLocaleString()) : "—"}</p>
-    ` : `<div class="card" style="color:var(--text-dim);">Add keywords and run a scan to see the performance map.</div>`}
+      <p style="font-size:11.5px;color:var(--text-dim);">Last run: ${p.lastRun ? esc(new Date(p.lastRun).toLocaleString()) : "—"}</p>
+    ` : `<div class="card" style="color:var(--text-dim);">Add keywords, set a location, and run a scan to see the performance map.</div>`}
   `;
 }
 
-function gbpAddKeyword(){
+function gbpAddProfile(){
+  const label = prompt("Label for this GBP profile (e.g. \"Downtown location\", \"Edmonton branch\"):");
+  if (!label) return;
   const g = activeData().gbp;
+  const profile = newGbpProfile(label);
+  g.profiles.push(profile);
+  g.activeProfileId = profile.id;
+  persist(); renderContent();
+}
+function gbpSelectProfile(id){ activeData().gbp.activeProfileId = id; GBP_SELECTED_KEYWORD = null; renderContent(); }
+function gbpRenameProfile(id){
+  const g = activeData().gbp;
+  const pr = g.profiles.find(x=>x.id===id); if (!pr) return;
+  const label = prompt("New label:", pr.label);
+  if (!label) return;
+  pr.label = label; persist(); renderContent();
+}
+function gbpRemoveProfile(id){
+  if (!confirm("Delete this GBP profile and all its scan results?")) return;
+  const g = activeData().gbp;
+  g.profiles = g.profiles.filter(x=>x.id!==id);
+  if (g.activeProfileId === id) g.activeProfileId = g.profiles[0]?.id || null;
+  persist(); renderContent();
+}
+
+async function gbpResolveLink(){
+  const p = gbpActiveProfile(); if (!p) return;
+  const link = document.getElementById("gbp-link").value.trim();
+  if (!link) { alert("Paste a GBP share link first."); return; }
+  if (!STATE.proxyEndpoint) { alert("Set your serverless proxy endpoint first (API & Settings)."); switchTab("settings"); return; }
+  p.gbpLink = link;
+  showLoading("Resolving GBP link…");
+  try {
+    const res = await callProxy("resolve_gbp_link", { url: link });
+    if (res.businessName) { p.businessName = res.businessName; }
+    else { alert("Couldn't automatically detect a business name from that link — enter it manually below."); }
+  } catch(e) { alert("Couldn't resolve that link — check it's a valid Google Maps/Business Profile URL, or enter the business name manually."); }
+  hideLoading();
+  persist(); renderContent();
+}
+async function gbpGeocodeLocation(){
+  const p = gbpActiveProfile(); if (!p) return;
+  const q = document.getElementById("gbp-location-query").value.trim();
+  if (!q) { alert("Type a location first."); return; }
+  if (!STATE.proxyEndpoint) { alert("Set your serverless proxy endpoint first (API & Settings)."); switchTab("settings"); return; }
+  p.locationQuery = q;
+  showLoading(`Locating "${q}"…`);
+  try {
+    const res = await callProxy("geocode_location", { query: q });
+    p.centerLat = res.lat; p.centerLng = res.lng; p.locationResolved = res.displayName;
+  } catch(e) { alert("Couldn't find that location — try a more specific address or place name."); }
+  hideLoading();
+  persist(); renderContent();
+}
+
+function gbpAddKeyword(){
+  const p = gbpActiveProfile(); if (!p) return;
   const input = document.getElementById("gbp-kw-input");
   const val = input.value.trim();
   if (!val) return;
-  if (g.keywords.length >= 10) { alert("You can track up to 10 keywords at a time for GBP performance."); return; }
-  if (g.keywords.includes(val)) { input.value = ""; return; }
-  g.keywords.push(val);
+  if (p.keywords.length >= 10) { alert("You can track up to 10 keywords per GBP profile."); return; }
+  if (p.keywords.includes(val)) { input.value = ""; return; }
+  p.keywords.push(val);
   persist(); renderContent();
 }
 function gbpRemoveKeyword(k){
-  const g = activeData().gbp;
-  g.keywords = g.keywords.filter(x=>x!==k);
-  delete g.results[k];
+  const p = gbpActiveProfile(); if (!p) return;
+  p.keywords = p.keywords.filter(x=>x!==k);
+  delete p.results[k];
   persist(); renderContent();
 }
 function gbpSuggestKeywords(){
   const d = activeData();
-  const g = d.gbp;
-  const candidates = [...new Set(d.keywords.map(k=>k.term))].filter(t => !g.keywords.includes(t));
+  const p = gbpActiveProfile(); if (!p) return;
+  const candidates = [...new Set(d.keywords.map(k=>k.term))].filter(t => !p.keywords.includes(t));
   if (!candidates.length) { alert("No tracked keywords to suggest from yet — add some in Keyword Tracking first, or type your own here."); return; }
-  const toAdd = candidates.slice(0, 10 - g.keywords.length);
-  g.keywords.push(...toAdd);
+  const toAdd = candidates.slice(0, 10 - p.keywords.length);
+  p.keywords.push(...toAdd);
   persist(); renderContent();
 }
 function gbpSelectKeyword(k){ GBP_SELECTED_KEYWORD = k; renderContent(); }
 
 async function gbpRunScan(){
-  const d = activeData();
-  const g = d.gbp;
+  const p = gbpActiveProfile();
+  if (!p) { alert("Add a GBP profile first."); return; }
   if (!STATE.proxyEndpoint) { alert("Set your serverless proxy endpoint first (API & Settings)."); switchTab("settings"); return; }
-  if (!g.keywords.length) { alert("Add at least one keyword first."); return; }
+  if (!p.keywords.length) { alert("Add at least one keyword first."); return; }
   const lat = parseFloat(document.getElementById("gbp-lat").value);
   const lng = parseFloat(document.getElementById("gbp-lng").value);
   const gridSize = parseInt(document.getElementById("gbp-grid-size").value, 10);
   const spacingKm = parseFloat(document.getElementById("gbp-spacing").value) || 2;
-  if (isNaN(lat) || isNaN(lng)) { alert("Enter a valid center latitude and longitude (or set them in Schema Markup → Business profile first)."); return; }
-  g.centerLat = lat; g.centerLng = lng; g.gridSize = gridSize; g.spacingKm = spacingKm;
+  if (isNaN(lat) || isNaN(lng)) { alert("Set a test location above (search by name, or enter latitude/longitude directly)."); return; }
+  if (!p.businessName) { alert("Enter or resolve a business name for this GBP profile first — it's what's used to spot you in the results."); return; }
+  p.centerLat = lat; p.centerLng = lng; p.gridSize = gridSize; p.spacingKm = spacingKm;
+  p.businessName = document.getElementById("gbp-bizname").value.trim() || p.businessName;
 
   const points = gbpBuildGrid(lat, lng, gridSize, spacingKm);
   const proj = currentProject();
-  const total = g.keywords.length * points.length;
+  const total = p.keywords.length * points.length;
   let done = 0;
-  g.results = {};
+  p.results = {};
 
-  for (const kw of g.keywords) {
-    g.results[kw] = [];
+  for (const kw of p.keywords) {
+    p.results[kw] = [];
     for (const pt of points) {
-      showLoading(`Scanning "${kw}" — point ${done+1} of ${total}…`);
+      showLoading(`Scanning "${kw}" for ${p.label} — point ${done+1} of ${total}…`);
       try {
         const res = await callProxy("gbp_grid_point", {
           keyword: kw, lat: pt.lat, lng: pt.lng, radiusKm: Math.max(1, spacingKm/2),
-          businessName: proj.name, domain: proj.domain
+          businessName: p.businessName, domain: proj.domain
         });
-        g.results[kw].push({ lat: pt.lat, lng: pt.lng, position: res.position, inLocalPack: res.inLocalPack });
+        p.results[kw].push({ lat: pt.lat, lng: pt.lng, position: res.position, inLocalPack: res.inLocalPack });
       } catch(e) {
-        g.results[kw].push({ lat: pt.lat, lng: pt.lng, position: null, inLocalPack: false });
+        p.results[kw].push({ lat: pt.lat, lng: pt.lng, position: null, inLocalPack: false });
       }
       done++;
     }
   }
-  g.lastRun = new Date().toISOString();
-  GBP_SELECTED_KEYWORD = g.keywords[0];
+  p.lastRun = new Date().toISOString();
+  GBP_SELECTED_KEYWORD = p.keywords[0];
   hideLoading();
   persist(); renderContent();
 }
 
 function afterGbpTab(){
-  const d = activeData();
-  const g = d.gbp;
-  if (!Object.keys(g.results).length) return;
-  if (!GBP_SELECTED_KEYWORD || !g.results[GBP_SELECTED_KEYWORD]) GBP_SELECTED_KEYWORD = g.keywords.find(k=>g.results[k]);
+  const p = gbpActiveProfile();
+  if (!p || !Object.keys(p.results).length) return;
+  if (!GBP_SELECTED_KEYWORD || !p.results[GBP_SELECTED_KEYWORD]) GBP_SELECTED_KEYWORD = p.keywords.find(k=>p.results[k]);
   const mapEl = document.getElementById("gbpMap");
   if (!mapEl || typeof L === "undefined") return;
 
   if (GBP_MAP_INSTANCE) { GBP_MAP_INSTANCE.remove(); GBP_MAP_INSTANCE = null; }
-  GBP_MAP_INSTANCE = L.map("gbpMap").setView([g.centerLat, g.centerLng], 12);
+  GBP_MAP_INSTANCE = L.map("gbpMap").setView([p.centerLat, p.centerLng], 12);
   L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
     attribution: '&copy; OpenStreetMap contributors', maxZoom: 18
   }).addTo(GBP_MAP_INSTANCE);
 
-  const pts = g.results[GBP_SELECTED_KEYWORD] || [];
-  pts.forEach(p => {
-    const color = gbpBucketColor(p.position, p.inLocalPack);
-    const marker = L.circleMarker([p.lat, p.lng], {
+  const pts = p.results[GBP_SELECTED_KEYWORD] || [];
+  pts.forEach(pt => {
+    const color = gbpBucketColor(pt.position, pt.inLocalPack);
+    const marker = L.circleMarker([pt.lat, pt.lng], {
       radius: 16, fillColor: color, color: "#fff", weight: 2, opacity: 1, fillOpacity: 0.9
     }).addTo(GBP_MAP_INSTANCE);
-    marker.bindPopup(`<b>${esc(GBP_SELECTED_KEYWORD)}</b><br>${esc(gbpBucketLabel(p.position, p.inLocalPack))}`);
+    marker.bindPopup(`<b>${esc(GBP_SELECTED_KEYWORD)}</b><br>${esc(gbpBucketLabel(pt.position, pt.inLocalPack))}`);
   });
-  // Business center marker
-  L.marker([g.centerLat, g.centerLng]).addTo(GBP_MAP_INSTANCE).bindPopup("Business location");
+  L.marker([p.centerLat, p.centerLng]).addTo(GBP_MAP_INSTANCE).bindPopup(`${esc(p.label)}<br>${esc(p.businessName)}`);
 }
 
 // =====================================================================
@@ -2924,15 +3044,20 @@ async function testProxyConnection(){
 }
 let LLM_PROVIDER_STATUS = null;
 function llmProviderStatusHTML(){
+  const orOn = LLM_PROVIDER_STATUS?.openrouter;
+  const orRow = `<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;padding-bottom:10px;border-bottom:1px solid var(--line);">
+    <span class="llm-logo" style="background:var(--charcoal);">OR</span>OpenRouter <span style="color:var(--text-dim);font-weight:400;">(covers all three below with one key)</span>
+    <span style="margin-left:auto;color:${orOn?'var(--green)':'var(--text-dim)'};font-weight:600;font-size:12px;">${orOn?'● Configured':'○ Not set'}</span>
+  </div>`;
   const rows = ["Claude","ChatGPT","Perplexity"].map(m => {
     const key = m === "Claude" ? "anthropic" : m === "ChatGPT" ? "openai" : "perplexity";
-    const on = LLM_PROVIDER_STATUS?.[key];
+    const on = orOn || LLM_PROVIDER_STATUS?.[key];
     return `<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">
       <span class="llm-logo" style="background:${LLM_COLORS[m]};">${m[0]}</span>${m}
-      <span style="margin-left:auto;color:${on?'var(--green)':'var(--text-dim)'};font-weight:600;font-size:12px;">${on?'● Configured':'○ Not set'}</span>
+      <span style="margin-left:auto;color:${on?'var(--green)':'var(--text-dim)'};font-weight:600;font-size:12px;">${on?(orOn?'● Via OpenRouter':'● Configured'):'○ Not set'}</span>
     </div>`;
   }).join("");
-  return rows;
+  return orRow + rows;
 }
 async function testLlmProviders(){
   if (!STATE.proxyEndpoint) { alert("Set your proxy endpoint first."); return; }
